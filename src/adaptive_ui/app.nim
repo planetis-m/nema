@@ -3,6 +3,7 @@ import uirelays
 import uirelays/backend
 import uirelays/layout
 import widgets/synedit
+import widgets/theme
 import ./[components, ui_doc, ui_render]
 
 const
@@ -44,6 +45,7 @@ type
     answers: seq[string]
     score: int
     phase: QuizPhase
+    theme: Theme
 
 proc runMinWindow*(title = DefaultWindowTitle;
     width = DefaultWindowWidth; height = DefaultWindowHeight) =
@@ -54,6 +56,7 @@ proc runMinWindow*(title = DefaultWindowTitle;
 
   var fm: FontMetrics
   let font = openFont("", 18, fm)
+  let theme = catppuccinMocha()
   setWindowTitle(title)
 
   var running = true
@@ -72,16 +75,13 @@ proc runMinWindow*(title = DefaultWindowTitle;
       else:
         discard
 
-    let bg = color(30, 30, 46)
-    let panel = color(49, 50, 68)
-    let fg = color(205, 214, 244)
-    let muted = color(166, 173, 200)
-
-    fillRect(rect(0, 0, screenW, screenH), bg)
-    fillRect(rect(0, 0, screenW, 44), panel)
-    discard drawText(font, 14, 12, title, fg, panel)
+    fillRect(rect(0, 0, screenW, screenH), theme.bg)
+    fillRect(rect(0, 0, screenW, 44), theme.scrollTrackColor)
+    discard drawText(font, 14, 12, title,
+      theme.fg[TokenClass.Text], theme.scrollTrackColor)
     discard drawText(font, 14, 64,
-      "Bootstrap window. Press Esc or Ctrl+Q to quit.", muted, bg)
+      "Bootstrap window. Press Esc or Ctrl+Q to quit.",
+      theme.fg[TokenClass.Comment], theme.bg)
 
     refresh()
     sleep(16)
@@ -243,16 +243,17 @@ proc resetQuiz(state: var AppState) =
   state.status = "Local quiz mode"
   state.focus = afAdaptive
 
-proc initAppState(width, height: int; font: Font): AppState =
+proc initAppState(width, height: int; font: Font; theme: Theme): AppState =
   result.width = width
   result.height = height
   result.outerLayout = parseLayout(OuterLayoutSpec)
   result.rt = initUiRuntime()
-  result.input = createSynEdit(font)
+  result.input = createSynEdit(font, theme)
   result.input.lang = langNone
   result.status = "Local quiz mode"
   result.focus = afAdaptive
   result.questions = makeQuestions()
+  result.theme = theme
   result.resetQuiz()
 
 proc selectedAnswer(state: UiRuntime): string =
@@ -311,10 +312,10 @@ proc inputEvent(state: var AppState; e: Event): Event =
       state.input.clear()
     result = default Event
 
-proc drawStatus(font: Font; r: Rect; text: string) =
-  let bg = color(28, 30, 34)
+proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
+  let bg = theme.scrollTrackColor
   fillRect(r, bg)
-  discard drawText(font, r.x + 8, r.y + 5, text, color(205, 214, 244), bg)
+  discard drawText(font, r.x + 8, r.y + 5, text, theme.fg[TokenClass.Text], bg)
 
 proc insetRect(r: Rect; pad: int): Rect =
   rect(r.x + pad, r.y + pad, max(0, r.w - pad * 2), max(0, r.h - pad * 2))
@@ -326,9 +327,10 @@ proc runLearningDemo*(title = "Adaptive UI Learning Demo";
 
   var fm: FontMetrics
   let font = openFont("", 16, fm)
+  let theme = catppuccinMocha()
   setWindowTitle(title)
 
-  var state = initAppState(win.width, win.height, font)
+  var state = initAppState(win.width, win.height, font, theme)
   var running = true
 
   while running:
@@ -357,19 +359,19 @@ proc runLearningDemo*(title = "Adaptive UI Learning Demo";
     else:
       discard
 
-    fillRect(rect(0, 0, state.width, state.height), color(220, 224, 230))
+    fillRect(rect(0, 0, state.width, state.height), state.theme.scrollTrackColor)
 
     let adaptiveEvent = if state.focus == afAdaptive: e else: default Event
     let ev = renderUiDoc(state.doc, state.rt, adaptiveEvent,
-      cells["adaptive"], font, fm)
+      cells["adaptive"], font, fm, state.theme)
     state.handleAdaptiveEvent(ev)
 
     let inputDrawEvent = state.inputEvent(if state.focus == afInput: e else: default Event)
-    fillRect(cells["input"], color(247, 248, 250))
+    fillRect(cells["input"], state.theme.bg)
     discard state.input.draw(inputDrawEvent, cells["input"].insetRect(8),
       state.focus == afInput)
 
-    drawStatus(font, cells["status"], state.status)
+    drawStatus(font, cells["status"], state.status, state.theme)
 
     refresh()
 

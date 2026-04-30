@@ -1,6 +1,7 @@
 import adaptive_ui
 import uirelays
 import uirelays/backend
+import widgets/theme
 
 const QuizDoc = UiDoc(
   version: 1,
@@ -50,6 +51,7 @@ proc main =
 
   var fm: FontMetrics
   let font = openFont("", 16, fm)
+  let theme = catppuccinMocha()
   setWindowTitle("Adaptive Renderer Smoke")
 
   var rt = initUiRuntime()
@@ -72,7 +74,7 @@ proc main =
         discard
 
       let ev = renderUiDoc(QuizDoc, rt, e,
-        rect(0, 0, width, max(0, height - 28)), font, fm)
+        rect(0, 0, width, max(0, height - 28)), font, fm, theme)
       case ev.kind
       of ueNone:
         discard
@@ -84,10 +86,10 @@ proc main =
         lastEvent = "Submitted " & $ev.value.len & " chars"
 
     discard renderUiDoc(QuizDoc, rt, default Event,
-      rect(0, 0, width, max(0, height - 28)), font, fm)
-    fillRect(rect(0, max(0, height - 28), width, 28), color(28, 30, 34))
+      rect(0, 0, width, max(0, height - 28)), font, fm, theme)
+    fillRect(rect(0, max(0, height - 28), width, 28), theme.scrollTrackColor)
     discard drawText(font, 8, max(0, height - 23),
-      lastEvent, color(205, 214, 244), color(28, 30, 34))
+      lastEvent, theme.fg[TokenClass.Text], theme.scrollTrackColor)
 
     refresh()
     sleep(16)

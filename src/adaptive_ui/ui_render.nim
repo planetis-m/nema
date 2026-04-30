@@ -2,19 +2,11 @@ import std/[strutils, tables]
 import uirelays
 import uirelays/layout
 import widgets/synedit
+import widgets/theme
 import ./[components, ui_doc]
 
 const
   Pad = 8
-
-let
-  bgColor = color(28, 30, 34)
-  panelColor = color(247, 248, 250)
-  borderColor = color(190, 196, 206)
-  textColor = color(28, 31, 36)
-  accentColor = color(42, 105, 210)
-  selectedColor = color(222, 235, 255)
-  dangerColor = color(180, 48, 64)
 
 proc noUiEvent(): UiEvent =
   UiEvent(kind: ueNone)
@@ -52,17 +44,20 @@ proc languageFor(name: string): SourceLanguage =
   else:
     langNone
 
-proc ensureEditor(rt: var UiRuntime; area: UiArea; font: Font): string =
+proc ensureEditor(rt: var UiRuntime; area: UiArea; font: Font;
+    theme: Theme): string =
   let key = componentKey(area)
   if not rt.components.hasKey(key):
     rt.components[key] = ComponentState(textBufferId: key)
   if not rt.components[key].hasEditor:
-    rt.components[key].editor = createSynEdit(font)
+    rt.components[key].editor = createSynEdit(font, theme)
     rt.components[key].hasEditor = true
   result = key
 
-proc syncReadOnlyEditor(rt: var UiRuntime; area: UiArea; font: Font) =
-  let key = rt.ensureEditor(area, font)
+proc syncReadOnlyEditor(rt: var UiRuntime; area: UiArea; font: Font;
+    theme: Theme) =
+  let key = rt.ensureEditor(area, font, theme)
+  rt.components[key].editor.theme = theme
   let lang =
     case area.kind
     of ukCode:
@@ -83,11 +78,11 @@ proc syncReadOnlyEditor(rt: var UiRuntime; area: UiArea; font: Font) =
     rt.components[key].lastKind = area.kind
 
 proc renderTextArea(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
-    focused: bool; font: Font): UiEvent =
-  rt.syncReadOnlyEditor(area, font)
+    focused: bool; font: Font; theme: Theme): UiEvent =
+  rt.syncReadOnlyEditor(area, font, theme)
   let key = componentKey(area)
-  fillRect(r, panelColor)
-  drawBorder(r, borderColor)
+  fillRect(r, theme.bg)
+  drawBorder(r, if focused: theme.fg[TokenClass.Operator] else: theme.scrollTrackColor)
   discard rt.components[key].editor.draw(e, r.inset(Pad), focused)
   result = noUiEvent()
 
@@ -96,9 +91,9 @@ proc optionRect(r: Rect; fm: FontMetrics; index: int): Rect =
   rect(r.x + Pad, r.y + Pad + index * rowH, max(0, r.w - Pad * 2), rowH - 4)
 
 proc renderRadio(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
-    fm: FontMetrics; font: Font): UiEvent =
-  fillRect(r, panelColor)
-  drawBorder(r, borderColor)
+    fm: FontMetrics; font: Font; theme: Theme): UiEvent =
+  fillRect(r, theme.bg)
+  drawBorder(r, theme.scrollTrackColor)
 
   var selected = rt.selectedOption(area)
   result = noUiEvent()
@@ -106,12 +101,16 @@ proc renderRadio(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
   for i, option in area.options:
     let row = optionRect(r, fm, i)
     let isSelected = option.id == selected
-    fillRect(row, if isSelected: selectedColor else: panelColor)
-    drawBorder(row, if isSelected: accentColor else: borderColor)
+    let rowBg = if isSelected: theme.selBg else: theme.bg
+    let rowBorder =
+      if isSelected: theme.fg[TokenClass.Operator]
+      else: theme.scrollTrackColor
+    fillRect(row, rowBg)
+    drawBorder(row, rowBorder)
 
     let marker = if isSelected: "(*) " else: "( ) "
     discard drawText(font, row.x + 8, row.y + 5,
-      marker & option.label, textColor, if isSelected: selectedColor else: panelColor)
+      marker & option.label, theme.fg[TokenClass.Text], rowBg)
 
     if e.kind == MouseDownEvent and e.button == LeftButton and
         row.contains(point(e.x, e.y)):
@@ -125,25 +124,27 @@ proc buttonRect(r: Rect; font: Font; label: string; x: var int): Rect =
   result = rect(x, r.y + Pad, w, max(28, r.h - Pad * 2))
   x += w + 8
 
-proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font): UiEvent =
-  fillRect(r, panelColor)
-  drawBorder(r, borderColor)
+proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font;
+    theme: Theme): UiEvent =
+  fillRect(r, theme.bg)
+  drawBorder(r, theme.scrollTrackColor)
   result = noUiEvent()
 
   var x = r.x + Pad
   for option in area.options:
     let b = buttonRect(r, font, option.label, x)
-    fillRect(b, accentColor)
-    drawBorder(b, accentColor)
+    fillRect(b, theme.selBg)
+    drawBorder(b, theme.fg[TokenClass.Operator])
     discard drawText(font, b.x + 14, b.y + max(4, (b.h - fontLineSkip(font)) div 2),
-      option.label, color(255, 255, 255), accentColor)
+      option.label, theme.fg[TokenClass.Text], theme.selBg)
     if e.kind == MouseDownEvent and e.button == LeftButton and
         b.contains(point(e.x, e.y)):
       result = eventForClick(area, option.id)
 
 proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
-    focused: bool; font: Font): UiEvent =
-  let key = rt.ensureEditor(area, font)
+    focused: bool; font: Font; theme: Theme): UiEvent =
+  let key = rt.ensureEditor(area, font, theme)
+  rt.components[key].editor.theme = theme
   if rt.components[key].lastKind != ukTextInput:
     rt.components[key].editor.lang = langNone
     rt.components[key].editor.showLineNumbers = false
@@ -151,8 +152,8 @@ proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
       rt.components[key].editor.setText(area.text)
     rt.components[key].lastKind = ukTextInput
 
-  fillRect(r, panelColor)
-  drawBorder(r, if focused: accentColor else: borderColor)
+  fillRect(r, theme.bg)
+  drawBorder(r, if focused: theme.fg[TokenClass.Operator] else: theme.scrollTrackColor)
 
   var drawEvent = e
   var submit = false
@@ -184,10 +185,10 @@ proc resolvedCells(doc: UiDoc; rt: var UiRuntime; area: Rect;
     r = r.offset(area)
 
 proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
-    font: Font; fm: FontMetrics): UiEvent =
+    font: Font; fm: FontMetrics; theme: Theme = catppuccinMocha()): UiEvent =
   var renderDoc: UiDoc
   var cells = resolvedCells(doc, rt, area, fm.lineHeight, renderDoc)
-  fillRect(area, bgColor)
+  fillRect(area, theme.bg)
 
   if rt.focus.len == 0 and renderDoc.focus.len > 0:
     rt.setFocus(renderDoc.focus)
@@ -208,17 +209,17 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
     let ev =
       case areaDef.kind
       of ukText, ukTranscript, ukCode, ukMath:
-        renderTextArea(rt, areaDef, routedEvent, r, focused, font)
+        renderTextArea(rt, areaDef, routedEvent, r, focused, font, theme)
       of ukRadio:
-        renderRadio(rt, areaDef, routedEvent, r, fm, font)
+        renderRadio(rt, areaDef, routedEvent, r, fm, font, theme)
       of ukButtons:
-        renderButtons(areaDef, routedEvent, r, font)
+        renderButtons(areaDef, routedEvent, r, font, theme)
       of ukTextInput:
-        renderTextInput(rt, areaDef, routedEvent, r, focused, font)
+        renderTextInput(rt, areaDef, routedEvent, r, focused, font, theme)
 
     if ev.kind != ueNone:
       result = ev
 
   if renderDoc.areas.len == 0:
     discard drawText(font, area.x + Pad, area.y + Pad,
-      "No UI areas to render.", dangerColor, bgColor)
+      "No UI areas to render.", theme.fg[TokenClass.Red], theme.bg)
