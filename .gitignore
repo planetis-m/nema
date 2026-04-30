@@ -1,6 +1,11 @@
+.codex
 deps/*
 examples/min_window
-examples/render_smoke
 examples/learning_demo
+examples/adaptive_gallery
 tests/test_ui_doc_parse
 tests/test_control_events
+tests/test_learning_flow
+tests/test_ui_render_state
+tests/test_config
+tests/test_skill_files

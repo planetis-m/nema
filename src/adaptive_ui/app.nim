@@ -4,7 +4,7 @@ import uirelays/backend
 import uirelays/layout
 import widgets/synedit
 import widgets/theme
-import ./[components, ui_doc, ui_render]
+import ./[components, learning, ui_render]
 
 const
   DefaultWindowWidth* = 900
@@ -21,30 +21,13 @@ type
     afAdaptive,
     afInput
 
-  QuizPhase = enum
-    qpAnswering,
-    qpFeedback,
-    qpDone
-
-  QuizQuestion = object
-    prompt: string
-    options: seq[UiOption]
-    correct: string
-    explanation: string
-
   AppState = object
     width, height: int
     outerLayout: Layout
-    doc: UiDoc
     rt: UiRuntime
     input: SynEdit
-    status: string
     focus: AppFocus
-    questions: seq[QuizQuestion]
-    questionIndex: int
-    answers: seq[string]
-    score: int
-    phase: QuizPhase
+    learning: LearningState
     theme: Theme
 
 proc runMinWindow*(title = DefaultWindowTitle;
@@ -89,160 +72,6 @@ proc runMinWindow*(title = DefaultWindowTitle;
   closeFont(font)
   shutdown()
 
-proc makeQuestions(): seq[QuizQuestion] =
-  @[
-    QuizQuestion(
-      prompt: "Which keyword declares an immutable local binding in Nim?",
-      options: @[
-        UiOption(id: "a", label: "var"),
-        UiOption(id: "b", label: "let"),
-        UiOption(id: "c", label: "type")
-      ],
-      correct: "b",
-      explanation: "`let` creates an immutable local binding."
-    ),
-    QuizQuestion(
-      prompt: "Which module should this project use for typed JSON mapping?",
-      options: @[
-        UiOption(id: "a", label: "std/json"),
-        UiOption(id: "b", label: "jsonx"),
-        UiOption(id: "c", label: "parseopt")
-      ],
-      correct: "b",
-      explanation: "`jsonx` maps JSON directly to Nim objects."
-    ),
-    QuizQuestion(
-      prompt: "Which uirelays module parses markdown table layouts?",
-      options: @[
-        UiOption(id: "a", label: "uirelays/layout"),
-        UiOption(id: "b", label: "widgets/theme"),
-        UiOption(id: "c", label: "relay/http")
-      ],
-      correct: "a",
-      explanation: "`uirelays/layout` provides `parseLayout` and `resolve`."
-    )
-  ]
-
-proc questionDoc(q: QuizQuestion; index, total: int): UiDoc =
-  UiDoc(
-    version: 1,
-    title: "Local Quiz",
-    layout: """
-| title, 2 lines |
-| prompt, * |
-| choices, 7 lines |
-| actions, 2 lines |
-""",
-    focus: "choices",
-    areas: @[
-      UiArea(
-        name: "title",
-        kind: ukText,
-        text: "Question " & $(index + 1) & " of " & $total
-      ),
-      UiArea(
-        name: "prompt",
-        kind: ukText,
-        text: q.prompt
-      ),
-      UiArea(
-        name: "choices",
-        kind: ukRadio,
-        id: "answer",
-        options: q.options
-      ),
-      UiArea(
-        name: "actions",
-        kind: ukButtons,
-        id: "question_actions",
-        options: @[UiOption(id: "submit", label: "Submit")]
-      )
-    ]
-  )
-
-proc feedbackDoc(q: QuizQuestion; selected: string; correct: bool;
-    index, total: int): UiDoc =
-  let resultText =
-    if correct:
-      "Correct.\n\n" & q.explanation
-    else:
-      "Not quite. You selected `" & selected & "`.\n\n" & q.explanation
-  let button =
-    if index + 1 < total:
-      UiOption(id: "next", label: "Next")
-    else:
-      UiOption(id: "finish", label: "Finish")
-
-  UiDoc(
-    version: 1,
-    title: "Feedback",
-    layout: """
-| title, 2 lines |
-| result, * |
-| actions, 2 lines |
-""",
-    focus: "actions",
-    areas: @[
-      UiArea(
-        name: "title",
-        kind: ukText,
-        text: "Question " & $(index + 1) & " feedback"
-      ),
-      UiArea(
-        name: "result",
-        kind: ukText,
-        text: resultText
-      ),
-      UiArea(
-        name: "actions",
-        kind: ukButtons,
-        id: "feedback_actions",
-        options: @[button]
-      )
-    ]
-  )
-
-proc scoreDoc(questions: seq[QuizQuestion]; answers: seq[string];
-    score: int): UiDoc =
-  var text = "Score: " & $score & " / " & $questions.len & "\n\n"
-  for i, q in questions:
-    let selected = if i < answers.len: answers[i] else: ""
-    text.add $(i + 1) & ". Correct answer: `" & q.correct & "`"
-    if selected.len > 0:
-      text.add "  Selected: `" & selected & "`"
-    text.add "\n"
-
-  UiDoc(
-    version: 1,
-    title: "Score",
-    layout: """
-| title, 2 lines |
-| summary, * |
-| actions, 2 lines |
-""",
-    focus: "actions",
-    areas: @[
-      UiArea(name: "title", kind: ukText, text: "Quiz complete"),
-      UiArea(name: "summary", kind: ukText, text: text),
-      UiArea(
-        name: "actions",
-        kind: ukButtons,
-        id: "score_actions",
-        options: @[UiOption(id: "restart", label: "Restart")]
-      )
-    ]
-  )
-
-proc resetQuiz(state: var AppState) =
-  state.rt = initUiRuntime()
-  state.questionIndex = 0
-  state.answers.setLen 0
-  state.score = 0
-  state.phase = qpAnswering
-  state.doc = questionDoc(state.questions[0], 0, state.questions.len)
-  state.status = "Local quiz mode"
-  state.focus = afAdaptive
-
 proc initAppState(width, height: int; font: Font; theme: Theme): AppState =
   result.width = width
   result.height = height
@@ -250,57 +79,9 @@ proc initAppState(width, height: int; font: Font; theme: Theme): AppState =
   result.rt = initUiRuntime()
   result.input = createSynEdit(font, theme)
   result.input.lang = langNone
-  result.status = "Local quiz mode"
   result.focus = afAdaptive
-  result.questions = makeQuestions()
+  result.learning = initLearningState()
   result.theme = theme
-  result.resetQuiz()
-
-proc selectedAnswer(state: UiRuntime): string =
-  state.selectedOption(UiArea(name: "choices", kind: ukRadio, id: "answer"))
-
-proc handleAdaptiveEvent(state: var AppState; ev: UiEvent) =
-  case ev.kind
-  of ueNone:
-    discard
-  of ueSelect:
-    state.status = "Selected " & ev.value
-  of ueClick:
-    case ev.id
-    of "submit":
-      let selected = state.rt.selectedAnswer()
-      if selected.len == 0:
-        state.status = "Choose an answer first"
-        return
-
-      let q = state.questions[state.questionIndex]
-      let correct = selected == q.correct
-      state.answers.add selected
-      if correct:
-        inc state.score
-      state.phase = qpFeedback
-      state.doc = feedbackDoc(q, selected, correct,
-        state.questionIndex, state.questions.len)
-      state.status = if correct: "Correct" else: "Review the feedback"
-    of "next":
-      inc state.questionIndex
-      state.phase = qpAnswering
-      state.doc = questionDoc(
-        state.questions[state.questionIndex],
-        state.questionIndex,
-        state.questions.len
-      )
-      state.status = "Question " & $(state.questionIndex + 1)
-    of "finish":
-      state.phase = qpDone
-      state.doc = scoreDoc(state.questions, state.answers, state.score)
-      state.status = "Quiz complete"
-    of "restart":
-      state.resetQuiz()
-    else:
-      state.status = "Clicked " & ev.id
-  of ueSubmitText:
-    state.status = "Submitted " & $ev.value.len & " characters"
 
 proc inputEvent(state: var AppState; e: Event): Event =
   result = e
@@ -308,7 +89,7 @@ proc inputEvent(state: var AppState; e: Event): Event =
       e.key == KeyEnter and (CtrlPressed in e.mods or GuiPressed in e.mods):
     let text = state.input.fullText
     if text.len > 0:
-      state.status = "Input captured: " & $text.len & " characters"
+      state.learning.status = "Input captured: " & $text.len & " characters"
       state.input.clear()
     result = default Event
 
@@ -362,16 +143,16 @@ proc runLearningDemo*(title = "Adaptive UI Learning Demo";
     fillRect(rect(0, 0, state.width, state.height), state.theme.scrollTrackColor)
 
     let adaptiveEvent = if state.focus == afAdaptive: e else: default Event
-    let ev = renderUiDoc(state.doc, state.rt, adaptiveEvent,
+    let ev = renderUiDoc(state.learning.doc, state.rt, adaptiveEvent,
       cells["adaptive"], font, fm, state.theme)
-    state.handleAdaptiveEvent(ev)
+    state.learning.handleLearningEvent(state.rt, ev)
 
     let inputDrawEvent = state.inputEvent(if state.focus == afInput: e else: default Event)
     fillRect(cells["input"], state.theme.bg)
     discard state.input.draw(inputDrawEvent, cells["input"].insetRect(8),
       state.focus == afInput)
 
-    drawStatus(font, cells["status"], state.status, state.theme)
+    drawStatus(font, cells["status"], state.learning.status, state.theme)
 
     refresh()
 

@@ -90,6 +90,17 @@ proc optionRect(r: Rect; fm: FontMetrics; index: int): Rect =
   let rowH = max(fm.lineHeight + 10, 28)
   rect(r.x + Pad, r.y + Pad + index * rowH, max(0, r.w - Pad * 2), rowH - 4)
 
+proc radioHitEvent*(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
+    fm: FontMetrics): UiEvent =
+  result = noUiEvent()
+  if e.kind != MouseDownEvent or e.button != LeftButton:
+    return
+
+  for i, option in area.options:
+    if optionRect(r, fm, i).contains(point(e.x, e.y)):
+      rt.setSelected(area, option.id)
+      return eventForSelect(area, option.id)
+
 proc renderRadio(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
     fm: FontMetrics; font: Font; theme: Theme): UiEvent =
   fillRect(r, theme.bg)
@@ -112,17 +123,24 @@ proc renderRadio(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
     discard drawText(font, row.x + 8, row.y + 5,
       marker & option.label, theme.fg[TokenClass.Text], rowBg)
 
-    if e.kind == MouseDownEvent and e.button == LeftButton and
-        row.contains(point(e.x, e.y)):
-      rt.setSelected(area, option.id)
-      selected = option.id
-      result = eventForSelect(area, option.id)
+  result = radioHitEvent(rt, area, e, r, fm)
 
 proc buttonRect(r: Rect; font: Font; label: string; x: var int): Rect =
   let textW = measureText(font, label).w
   let w = max(92, textW + 28)
   result = rect(x, r.y + Pad, w, max(28, r.h - Pad * 2))
   x += w + 8
+
+proc buttonHitEvent*(area: UiArea; e: Event; r: Rect; font: Font): UiEvent =
+  result = noUiEvent()
+  if e.kind != MouseDownEvent or e.button != LeftButton:
+    return
+
+  var x = r.x + Pad
+  for option in area.options:
+    let b = buttonRect(r, font, option.label, x)
+    if b.contains(point(e.x, e.y)):
+      return eventForClick(area, option.id)
 
 proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font;
     theme: Theme): UiEvent =
@@ -137,9 +155,7 @@ proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font;
     drawBorder(b, theme.fg[TokenClass.Operator])
     discard drawText(font, b.x + 14, b.y + max(4, (b.h - fontLineSkip(font)) div 2),
       option.label, theme.fg[TokenClass.Text], theme.selBg)
-    if e.kind == MouseDownEvent and e.button == LeftButton and
-        b.contains(point(e.x, e.y)):
-      result = eventForClick(area, option.id)
+  result = buttonHitEvent(area, e, r, font)
 
 proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
     focused: bool; font: Font; theme: Theme): UiEvent =
@@ -170,11 +186,13 @@ proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
   else:
     result = noUiEvent()
 
-proc resolvedCells(doc: UiDoc; rt: var UiRuntime; area: Rect;
+proc resolveUiDocCells*(doc: UiDoc; rt: var UiRuntime; area: Rect;
     lineHeight: int; renderDoc: var UiDoc): Table[string, Rect] =
   try:
     let parsed = parseLayout(doc.layout)
     result = parsed.resolve(area.w, area.h, lineHeight, gap = 2)
+    if result.len == 0:
+      raise newException(ValueError, "layout produced no cells")
     renderDoc = doc
   except CatchableError:
     rt.status = "layout error: " & getCurrentExceptionMsg()
@@ -187,7 +205,7 @@ proc resolvedCells(doc: UiDoc; rt: var UiRuntime; area: Rect;
 proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
     font: Font; fm: FontMetrics; theme: Theme = catppuccinMocha()): UiEvent =
   var renderDoc: UiDoc
-  var cells = resolvedCells(doc, rt, area, fm.lineHeight, renderDoc)
+  var cells = resolveUiDocCells(doc, rt, area, fm.lineHeight, renderDoc)
   fillRect(area, theme.bg)
 
   if rt.focus.len == 0 and renderDoc.focus.len > 0:
