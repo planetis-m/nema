@@ -3,7 +3,7 @@ import jsonx
 import relay
 import openai/chat
 import openai/retry
-import ./[config, live_flow, skill_files, ui_doc, ui_parse]
+import ./[config, live_flow, skill_files, ui_doc, ui_parse, ui_schema]
 
 {.passL: "-lcurl".}
 
@@ -78,9 +78,10 @@ type
     role*: AgentRole
     content*: string
 
-  RequestKind = enum
-    rkChat,
-    rkUi
+  AgentPhase = enum
+    apIdle,
+    apWaitingChat,
+    apWaitingUi
 
   ResultKind* = enum
     resNone,
@@ -94,15 +95,6 @@ type
     doc*: UiDoc
     error*: string
 
-  PendingRequest = object
-    requestId: int64
-    kind: RequestKind
-    savedMessages: seq[ChatMessage]
-    model: string
-    maxTokens: int
-    responseFormat: ResponseFormat
-    attempt: int
-
   AgentState* = object
     client*: Relay
     endpoint: OpenAIConfig
@@ -112,133 +104,11 @@ type
     uiSystemMsg: ChatMessage
     uiFormat: ResponseFormat
     skillSummary: string
-    pending: seq[PendingRequest]
+    phase: AgentPhase
+    attempt: int
+    pendingDoc: UiDoc
     nextId: int64
     rng: Rand
-
-type
-  SchemaProp = object
-    `type`: string
-    description: string
-
-  SchemaEnumProp = object
-    `type`: string
-    description: string
-    `enum`: seq[string]
-
-  UiOptionSchema = object
-    `type`: string
-    properties: tuple[
-      id: SchemaProp,
-      label: SchemaProp,
-      selected: SchemaProp
-    ]
-    required: seq[string]
-    additionalProperties: bool
-
-  UiOptionArraySchema = object
-    `type`: string
-    description: string
-    items: UiOptionSchema
-
-  UiAreaSchema = object
-    `type`: string
-    properties: tuple[
-      name: SchemaProp,
-      kind: SchemaEnumProp,
-      text: SchemaProp,
-      id: SchemaProp,
-      options: UiOptionArraySchema,
-      language: SchemaProp,
-      placeholder: SchemaProp,
-      submitLabel: SchemaProp
-    ]
-    required: seq[string]
-    additionalProperties: bool
-
-  UiAreaArraySchema = object
-    `type`: string
-    description: string
-    items: UiAreaSchema
-
-  UiDocSchema = object
-    `type`: string
-    properties: tuple[
-      version: SchemaProp,
-      title: SchemaProp,
-      layout: SchemaProp,
-      focus: SchemaProp,
-      areas: UiAreaArraySchema
-    ]
-    required: seq[string]
-    additionalProperties: bool
-
-proc schemaProp(kind, description: string): SchemaProp =
-  SchemaProp(`type`: kind, description: description)
-
-proc schemaEnumProp(kind, description: string;
-    values: openArray[string]): SchemaEnumProp =
-  SchemaEnumProp(
-    `type`: kind,
-    description: description,
-    `enum`: @values
-  )
-
-proc uiOptionSchema(): UiOptionSchema =
-  UiOptionSchema(
-    `type`: "object",
-    properties: (
-      id: schemaProp("string", "Stable option id."),
-      label: schemaProp("string", "Visible option label."),
-      selected: schemaProp("boolean", "Whether this option is selected.")
-    ),
-    required: @["id", "label"],
-    additionalProperties: false
-  )
-
-proc uiAreaSchema(): UiAreaSchema =
-  UiAreaSchema(
-    `type`: "object",
-    properties: (
-      name: schemaProp("string", "Layout cell name."),
-      kind: schemaEnumProp("string", "One supported UiKind string.", [
-        "text", "code", "radio", "buttons", "textInput", "math", "transcript"
-      ]),
-      text: schemaProp("string", "Markdown-like text content."),
-      id: schemaProp("string", "Stable component id for interactive areas."),
-      options: UiOptionArraySchema(
-        `type`: "array",
-        description: "Options for radio groups and button rows.",
-        items: uiOptionSchema()
-      ),
-      language: schemaProp("string", "Code language name."),
-      placeholder: schemaProp("string", "Text input placeholder."),
-      submitLabel: schemaProp("string", "Text input submit button label.")
-    ),
-    required: @["name", "kind"],
-    additionalProperties: false
-  )
-
-proc uiDocSchema(): UiDocSchema =
-  UiDocSchema(
-    `type`: "object",
-    properties: (
-      version: schemaProp("integer", "UiDoc version. Must be 1."),
-      title: schemaProp("string", "Short screen title."),
-      layout: schemaProp("string", "uirelays markdown table layout."),
-      focus: schemaProp("string", "Optional focused area name."),
-      areas: UiAreaArraySchema(
-        `type`: "array",
-        description: "Areas rendered into layout cells.",
-        items: uiAreaSchema()
-      )
-    ),
-    required: @["version", "title", "layout", "areas"],
-    additionalProperties: false
-  )
-
-proc uiDocResponseFormat*(): ResponseFormat =
-  formatJsonSchema("ui_doc", uiDocSchema(), strict = true)
 
 proc initAgentState*(cfg: AppConfig; skills = SkillLibrary()): AgentState =
   result = AgentState(
@@ -254,7 +124,7 @@ proc initAgentState*(cfg: AppConfig; skills = SkillLibrary()): AgentState =
     ),
     chatMessages: @[systemMessageText(ChatBasePrompt)],
     uiSystemMsg: systemMessageText(UiBasePrompt & "\n\n" & UiFlowHints[lfAdaptive]),
-    uiFormat: uiDocResponseFormat(),
+    uiFormat: uiDocFmt,
     skillSummary: skills.skillSummary(),
     nextId: 1,
     rng: initRand(epochTime().int64)
@@ -266,7 +136,7 @@ proc close*(state: var AgentState) =
     state.client = nil
 
 proc hasPending*(state: AgentState): bool =
-  state.pending.len > 0 or state.client.hasRequests()
+  state.phase != apIdle
 
 proc setFlow*(state: var AgentState; kind: LiveFlowKind) =
   let sysText = ChatBasePrompt & "\n\n" & FlowPrompts[kind]
@@ -282,6 +152,8 @@ proc clearHistory*(state: var AgentState) =
                else: systemMessageText(ChatBasePrompt)
   state.chatMessages = @[sysMsg]
   state.chatHistory.setLen(0)
+  state.phase = apIdle
+  state.attempt = 0
 
 proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc;
     skillSummary: string): string =
@@ -299,13 +171,9 @@ proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc;
   result.add toJson(currentDoc)
   result.add "\n\nReturn the next UiDoc JSON only."
 
-template chatModel(state: AgentState): string = state.cfg.chatModel
-template uiModel(state: AgentState): string = state.cfg.uiModel
-
-proc enqueue(state: var AgentState; kind: RequestKind;
-    messages: seq[ChatMessage]; model: string;
-    maxTokens: int; responseFormat: ResponseFormat): int64 =
-  result = state.nextId
+proc enqueue(state: var AgentState; messages: seq[ChatMessage];
+    model: string; maxTokens: int; responseFormat: ResponseFormat) =
+  let requestId = state.nextId
   inc state.nextId
   var batch: RequestBatch
   chatAdd(
@@ -319,19 +187,20 @@ proc enqueue(state: var AgentState; kind: RequestKind;
       toolChoice = ToolChoice.none,
       responseFormat = responseFormat
     ),
-    requestId = result,
+    requestId = requestId,
     timeoutMs = state.cfg.timeoutMs
   )
   state.client.startRequests(batch)
-  state.pending.add PendingRequest(
-    requestId: result,
-    kind: kind,
-    savedMessages: messages,
-    model: model,
-    maxTokens: maxTokens,
-    responseFormat: responseFormat,
-    attempt: 1
-  )
+
+proc buildUiMessages(state: AgentState): seq[ChatMessage] =
+  result.add state.uiSystemMsg
+  let userText = formatUiUserMsg(state.chatHistory, state.pendingDoc,
+    state.skillSummary)
+  if state.skillSummary.len > 0:
+    result.add userMessageText(
+      "Available skill files:\n" & state.skillSummary & "\n\n" & userText)
+  else:
+    result.add userMessageText(userText)
 
 proc submitChat*(state: var AgentState; userText: string): string =
   let text = userText.strip()
@@ -339,96 +208,83 @@ proc submitChat*(state: var AgentState; userText: string): string =
     return "input is empty"
   if state.client == nil:
     return "agent is closed"
-
   state.chatMessages.add userMessageText(text)
   state.chatHistory.add ChatEntry(role: arUser, content: text)
-  discard state.enqueue(rkChat, state.chatMessages, state.chatModel,
-    800, formatText)
+  state.phase = apWaitingChat
+  state.attempt = 1
+  try:
+    state.enqueue(state.chatMessages, state.cfg.chatModel, 800, formatText)
+  except IOError:
+    state.phase = apIdle
+    return getCurrentExceptionMsg()
   result = ""
 
 proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
   if state.client == nil:
     return "agent is closed"
-
-  var msgs: seq[ChatMessage]
-  msgs.add state.uiSystemMsg
-  if state.skillSummary.len > 0:
-    msgs.add userMessageText(
-      "Available skill files:\n" & state.skillSummary & "\n\n" &
-      formatUiUserMsg(state.chatHistory, currentDoc, state.skillSummary))
-  else:
-    msgs.add userMessageText(
-      formatUiUserMsg(state.chatHistory, currentDoc, state.skillSummary))
-  discard state.enqueue(rkUi, msgs, state.uiModel, 1200,
-    state.uiFormat)
+  state.pendingDoc = currentDoc
+  state.phase = apWaitingUi
+  state.attempt = 1
+  try:
+    state.enqueue(state.buildUiMessages(), state.cfg.uiModel, 1200,
+      state.uiFormat)
+  except IOError:
+    state.phase = apIdle
+    return getCurrentExceptionMsg()
   result = ""
 
-proc findByRequestId(state: AgentState; requestId: int64): int =
-  for i, p in state.pending:
-    if p.requestId == requestId:
-      return i
-  result = -1
-
-proc parseResponse(item: RequestResult; kind: RequestKind):
-    tuple[ok: bool, text: string, err: string] =
+proc extractText(item: RequestResult): string =
   if item.error.kind != teNone:
-    return (false, "", $item.error.kind & ": " & item.error.message)
+    raise newException(IOError, $item.error.kind & ": " & item.error.message)
   if not isHttpSuccess(item.response.code):
-    return (false, item.response.body,
+    raise newException(IOError,
       "HTTP " & $item.response.code & ": " & item.response.body)
   var parsed: ChatCreateResult
   if not chatParse(item.response.body, parsed):
-    return (false, "", "failed to parse response")
+    raise newException(ValueError, "failed to parse chat response")
   try:
-    result = (true, $parsed.firstText(), "")
-  except CatchableError as e:
-    result = (false, "", e.msg)
+    result = $parsed.firstText()
+  except ValueError:
+    raise newException(ValueError,
+      "response has no text content: " & getCurrentExceptionMsg())
 
 proc isRetriable(item: RequestResult): bool =
   if item.error.kind != teNone:
     return isRetriableTransport(item.error.kind)
   return isRetriableStatus(item.response.code)
 
-proc retryRequest(state: var AgentState; pending: PendingRequest): bool =
-  if pending.attempt >= MaxRetries:
+proc retryCurrent(state: var AgentState): bool =
+  if state.attempt >= MaxRetries:
     return false
-  let nextAttempt = pending.attempt + 1
-  discard state.enqueue(pending.kind, pending.savedMessages, pending.model,
-    pending.maxTokens, pending.responseFormat)
-  state.pending[^1].attempt = nextAttempt
+  inc state.attempt
+  case state.phase
+  of apWaitingChat:
+    state.enqueue(state.chatMessages, state.cfg.chatModel, 800, formatText)
+  of apWaitingUi:
+    state.enqueue(state.buildUiMessages(), state.cfg.uiModel, 1200,
+      state.uiFormat)
+  else:
+    return false
   result = true
 
 proc poll*(state: var AgentState; outResult: var AgentResult): bool =
-  if state.client == nil:
+  if state.client == nil or state.phase == apIdle:
     return false
 
   var item: RequestResult
-  if state.client.pollForResult(item):
-    let requestId = item.response.request.requestId
-    let idx = state.findByRequestId(requestId)
-    if idx < 0:
-      outResult = AgentResult(kind: resError, error: "unknown request id")
-      return true
+  if not state.client.pollForResult(item):
+    return false
 
-    let pending = state.pending[idx]
-    state.pending.del idx
-
-    let (ok, text, err) = parseResponse(item, pending.kind)
-    if not ok:
-      if isRetriable(item) and state.retryRequest(pending):
-        outResult = AgentResult(kind: resError,
-          error: "retrying (" & $pending.attempt & "/" & $MaxRetries & "): " & err,
-          text: text)
-        return true
-      outResult = AgentResult(kind: resError, error: err, text: text)
-      return true
-
-    case pending.kind
-    of rkChat:
+  try:
+    let text = extractText(item)
+    let phase = state.phase
+    state.phase = apIdle
+    case phase
+    of apWaitingChat:
       state.chatMessages.add assistantMessageText(text)
       state.chatHistory.add ChatEntry(role: arAssistant, content: text)
       outResult = AgentResult(kind: resChatText, text: text)
-    of rkUi:
+    of apWaitingUi:
       var doc: UiDoc
       var parseErr = ""
       if parseUiDoc(text, doc, parseErr):
@@ -436,8 +292,15 @@ proc poll*(state: var AgentState; outResult: var AgentResult): bool =
       else:
         outResult = AgentResult(kind: resError,
           error: "invalid UI document: " & parseErr, text: text)
-    return true
-
-  return false
-
-
+    else:
+      outResult = AgentResult(kind: resError, error: "unexpected phase")
+  except CatchableError:
+    let err = getCurrentExceptionMsg()
+    let attemptBefore = state.attempt
+    if isRetriable(item) and state.retryCurrent():
+      outResult = AgentResult(kind: resError,
+        error: "retrying (" & $attemptBefore & "/" & $MaxRetries & "): " & err)
+    else:
+      state.phase = apIdle
+      outResult = AgentResult(kind: resError, error: err)
+  return true

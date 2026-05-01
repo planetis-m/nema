@@ -1,6 +1,6 @@
 import std/strutils
 import jsonx
-import adaptive_ui/[agent, config, live_flow, skill_files]
+import adaptive_ui/[agent, config, live_flow, skill_files, ui_schema]
 
 let cfgMissing = AppConfig(
   apiUrl: "https://example.invalid/v1/chat/completions",
@@ -28,7 +28,7 @@ block configHasKey:
   ).hasKey()
 
 block responseFormat:
-  let text = toJson(uiDocResponseFormat())
+  let text = toJson(uiDocFmt)
   doAssert "\"type\":\"json_schema\"" in text
   doAssert "\"name\":\"ui_doc\"" in text
   doAssert "\"strict\":true" in text
