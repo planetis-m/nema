@@ -53,9 +53,7 @@ Use this file as the standing instruction for coding agents working in this repo
 Preferred compile checks after implementation starts:
 
 ```sh
-nim c -d:sdl3 examples/learning_demo.nim
-nim c -r tests/test_ui_doc_parse.nim
-nim c -r tests/test_control_events.nim
+nim c -d:sdl3 -r tests/tester.nim
 ```
 
 When live OpenAI calls are added, keep those examples opt-in through environment variables. Tests must not require network access or API keys.
