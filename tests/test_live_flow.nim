@@ -8,11 +8,13 @@ block commands:
   doAssert parseLiveCommand("/quiz nim basics").text == "nim basics"
   doAssert parseLiveCommand(" /essay compare ARC and ORC ").kind == lcEssay
   doAssert parseLiveCommand(" /essay compare ARC and ORC ").text == "compare ARC and ORC"
+  doAssert parseLiveCommand("/debug").kind == lcDebug
 
 block flowMapping:
   doAssert flowForCommand(lcChat) == lfChat
   doAssert flowForCommand(lcQuiz) == lfQuiz
   doAssert flowForCommand(lcEssay) == lfEssay
+  doAssert flowForCommand(lcDebug) == lfChat
   doAssert flowTitle(lfQuiz) == "Quiz"
 
 block prompts:

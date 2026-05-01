@@ -48,6 +48,11 @@ src/
     ui_parse.nim
     ui_render.nim
     components.nim
+    interaction.nim
+    learning.nim
+    live_flow.nim
+    transcript.nim
+    debug_log.nim
     markdown_view.nim
     skill_files.nim
     math_view.nim
@@ -69,6 +74,11 @@ Module responsibilities:
 - `ui_parse.nim`: parse UI agent output into `UiDoc`.
 - `ui_render.nim`: resolve layout and call component renderers.
 - `components.nim`: immediate-mode controls, most backed by `SynEdit`.
+- `interaction.nim`: convert component events and current values into chat-agent text.
+- `learning.nim`: local scripted learning demo state.
+- `live_flow.nim`: live chat, quiz, and essay mode prompts and commands.
+- `transcript.nim`: normal chat transcript fallback documents.
+- `debug_log.nim`: bounded raw-response diagnostics for failed UI generation.
 - `markdown_view.nim`: tiny markdown display support for the first prototype.
 - `skill_files.nim`: locate, load, and summarize `SKILL.md` files.
 - `math_view.nim`: basic inline and block math rendering fallback.

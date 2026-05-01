@@ -79,3 +79,37 @@ block:
   doAssert rt.status.startsWith("layout error:")
   doAssert renderDoc.title == "Adaptive UI"
   doAssert cells.hasKey("main")
+
+block:
+  let area = UiArea(
+    name: "answer",
+    kind: ukTextInput,
+    id: "essay",
+    submitLabel: "Submit"
+  )
+  let r = rect(0, 0, 320, 160)
+  let b = textInputButtonRect(r, font, area.submitLabel)
+  let editor = textInputEditorRect(area, r, font)
+
+  doAssert b.w > 0
+  doAssert b.h > 0
+  doAssert b.x >= r.x
+  doAssert b.y > r.y
+  doAssert editor.h < r.h
+
+  let ev = textInputSubmitEvent(area,
+    Event(kind: MouseDownEvent, x: b.x + 2, y: b.y + 2, button: LeftButton),
+    r, font, "essay text")
+  doAssert ev.kind == ueSubmitText
+  doAssert ev.id == "essay"
+  doAssert ev.value == "essay text"
+
+block:
+  let area = UiArea(name: "answer", kind: ukTextInput, id: "essay")
+  let r = rect(0, 0, 320, 160)
+  let b = textInputButtonRect(r, font, area.submitLabel)
+  let editor = textInputEditorRect(area, r, font)
+
+  doAssert b.w == 0
+  doAssert b.h == 0
+  doAssert editor == r

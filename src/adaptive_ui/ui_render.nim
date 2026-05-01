@@ -169,6 +169,45 @@ proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font;
       option.label, theme.fg[TokenClass.Text], theme.selBg)
   result = buttonHitEvent(area, e, r, font)
 
+proc textInputButtonRect*(r: Rect; font: Font; label: string): Rect =
+  if label.strip().len == 0:
+    return rect(0, 0, 0, 0)
+
+  let maxW = max(0, r.w - Pad * 2)
+  let maxH = max(0, r.h - Pad * 2)
+  if maxW == 0 or maxH == 0:
+    return rect(0, 0, 0, 0)
+
+  let textW = measureText(font, label).w
+  let w = min(maxW, max(92, textW + 28))
+  let h = min(maxH, max(28, fontLineSkip(font) + 10))
+  rect(r.x + r.w - Pad - w, r.y + r.h - Pad - h, w, h)
+
+proc textInputEditorRect*(area: UiArea; r: Rect; font: Font): Rect =
+  let b = textInputButtonRect(r, font, area.submitLabel)
+  if b.w > 0 and b.h > 0:
+    result = rect(r.x, r.y, r.w, max(0, b.y - r.y - 4))
+  else:
+    result = r
+
+proc textInputSubmitEvent*(area: UiArea; e: Event; r: Rect; font: Font;
+    text: string): UiEvent =
+  result = noUiEvent()
+  if e.kind != MouseDownEvent or e.button != LeftButton:
+    return
+
+  let b = textInputButtonRect(r, font, area.submitLabel)
+  if b.w > 0 and b.h > 0 and b.contains(point(e.x, e.y)):
+    result = eventForSubmit(area, text)
+
+proc drawTextInputButton(area: UiArea; r: Rect; font: Font; theme: Theme) =
+  let b = textInputButtonRect(r, font, area.submitLabel)
+  if b.w > 0 and b.h > 0:
+    fillRect(b, theme.selBg)
+    drawBorder(b, theme.fg[TokenClass.Operator])
+    discard drawText(font, b.x + 14, b.y + max(4, (b.h - fontLineSkip(font)) div 2),
+      area.submitLabel, theme.fg[TokenClass.Text], theme.selBg)
+
 proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
     focused: bool; font: Font; theme: Theme): UiEvent =
   let key = rt.ensureEditor(area, font, theme)
@@ -185,13 +224,21 @@ proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
 
   var drawEvent = e
   var submit = false
+  let text = rt.components[key].editor.fullText
+  let clickSubmit = textInputSubmitEvent(area, e, r, font, text)
+  if clickSubmit.kind != ueNone:
+    submit = true
+    drawEvent = default Event
+
   if focused and e.kind == KeyDownEvent and e.key == KeyEnter and
       (CtrlPressed in e.mods or GuiPressed in e.mods):
     submit = true
     drawEvent = default Event
 
-  discard rt.components[key].editor.draw(drawEvent, r.inset(Pad), focused)
+  let editorRect = textInputEditorRect(area, r, font)
+  discard rt.components[key].editor.draw(drawEvent, editorRect.inset(Pad), focused)
   rt.setText(area, rt.components[key].editor.fullText)
+  drawTextInputButton(area, r, font, theme)
 
   if submit:
     result = eventForSubmit(area, rt.components[key].editor.fullText)

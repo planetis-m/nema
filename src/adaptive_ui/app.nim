@@ -200,6 +200,9 @@ proc handleSubmittedInput(state: var AppState; text: string) =
       state.submitLiveText(cmd.text)
     of lcChat, lcQuiz, lcEssay:
       state.switchLiveFlow(flowForCommand(cmd.kind), cmd.text)
+    of lcDebug:
+      state.liveDoc = debugUiDoc(state.debugLog)
+      state.status = "Debug log"
 
 proc handleLiveUiEvent(state: var AppState; ev: UiEvent) =
   case ev.kind

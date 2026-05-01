@@ -11,7 +11,8 @@ type
     lcNone,
     lcChat,
     lcQuiz,
-    lcEssay
+    lcEssay,
+    lcDebug
 
   LiveCommand* = object
     kind*: LiveCommandKind
@@ -35,6 +36,8 @@ proc parseLiveCommand*(input: string): LiveCommand =
     result = LiveCommand(kind: lcQuiz, text: commandPayload(trimmed, "/quiz"))
   elif lowered == "/essay" or lowered.startsWith("/essay "):
     result = LiveCommand(kind: lcEssay, text: commandPayload(trimmed, "/essay"))
+  elif lowered == "/debug":
+    result = LiveCommand(kind: lcDebug)
   else:
     result = LiveCommand(kind: lcNone, text: trimmed)
 
@@ -44,7 +47,7 @@ proc flowForCommand*(kind: LiveCommandKind): LiveFlowKind =
     lfQuiz
   of lcEssay:
     lfEssay
-  of lcNone, lcChat:
+  of lcNone, lcChat, lcDebug:
     lfChat
 
 proc flowTitle*(kind: LiveFlowKind): string =
