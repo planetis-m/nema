@@ -7,7 +7,7 @@ import widgets/synedit
 import widgets/theme
 import ./[
   agent, components, config, interaction, learning, skill_files, ui_doc,
-  ui_render
+  transcript, ui_render
 ]
 
 const
@@ -149,7 +149,7 @@ proc submitLiveText(state: var AppState; text: string) =
   var err = ""
   if state.agent.submitUserText(text, err):
     state.status = state.agent.lastStatus
-    state.liveDoc = textUiDoc("Waiting", "Waiting for the chat response.")
+    state.liveDoc = transcriptUiDoc(state.agent.history, "Waiting")
   else:
     state.status = err
 
@@ -193,7 +193,7 @@ proc pollLiveAgent(state: var AppState) =
       if state.liveDoc.areas.len == 0:
         state.liveDoc = textUiDoc("Agent Error", item.error)
     of agChatText:
-      state.liveDoc = textUiDoc("Chat", item.text)
+      state.liveDoc = transcriptUiDoc(state.agent.history)
       var err = ""
       if state.agent.enqueueUiDoc(state.liveDoc, err):
         state.status = state.agent.lastStatus
