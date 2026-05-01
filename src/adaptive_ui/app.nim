@@ -1,10 +1,14 @@
-import std/tables
+import std/[strutils, tables]
+from std/os import fileExists
 import uirelays
 import uirelays/backend
 import uirelays/layout
 import widgets/synedit
 import widgets/theme
-import ./[components, learning, ui_render]
+import ./[
+  agent, components, config, interaction, learning, skill_files, ui_doc,
+  ui_render
+]
 
 const
   DefaultWindowWidth* = 900
@@ -17,6 +21,10 @@ const
 """
 
 type
+  AppMode* = enum
+    appLocalDemo,
+    appLiveChat
+
   AppFocus = enum
     afAdaptive,
     afInput
@@ -27,8 +35,13 @@ type
     rt: UiRuntime
     input: SynEdit
     focus: AppFocus
+    mode: AppMode
     learning: LearningState
+    liveDoc: UiDoc
+    status: string
     theme: Theme
+    agent: AgentRuntime
+    agentReady: bool
 
 proc runMinWindow*(title = DefaultWindowTitle;
     width = DefaultWindowWidth; height = DefaultWindowHeight) =
@@ -72,7 +85,8 @@ proc runMinWindow*(title = DefaultWindowTitle;
   closeFont(font)
   shutdown()
 
-proc initAppState(width, height: int; font: Font; theme: Theme): AppState =
+proc initAppState(width, height: int; font: Font; theme: Theme; mode: AppMode;
+    cfg = initAppConfig(); skills = SkillLibrary(); status = ""): AppState =
   result.width = width
   result.height = height
   result.outerLayout = parseLayout(OuterLayoutSpec)
@@ -80,18 +94,114 @@ proc initAppState(width, height: int; font: Font; theme: Theme): AppState =
   result.input = createSynEdit(font, theme)
   result.input.lang = langNone
   result.focus = afAdaptive
+  result.mode = mode
   result.learning = initLearningState()
+  result.liveDoc = textUiDoc(
+    "Adaptive UI",
+    "Ask for study notes, a quiz, an essay prompt, or a normal chat response."
+  )
+  result.status = status
   result.theme = theme
+  if mode == appLiveChat:
+    result.agent = initAgentRuntime(cfg, skills)
+    result.agentReady = true
+    if result.status.len == 0:
+      result.status = result.agent.lastStatus
 
-proc inputEvent(state: var AppState; e: Event): Event =
+proc close(state: var AppState) =
+  if state.agentReady:
+    state.agent.close()
+    state.agentReady = false
+
+proc currentStatus(state: AppState): string =
+  if state.mode == appLocalDemo:
+    result = state.learning.status
+  elif state.status.len > 0:
+    result = state.status
+  else:
+    result = state.agent.lastStatus
+
+proc currentDoc(state: AppState): UiDoc =
+  case state.mode
+  of appLocalDemo:
+    state.learning.doc
+  of appLiveChat:
+    state.liveDoc
+
+proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
   result = e
   if state.focus == afInput and e.kind == KeyDownEvent and
       e.key == KeyEnter and (CtrlPressed in e.mods or GuiPressed in e.mods):
     let text = state.input.fullText
     if text.len > 0:
-      state.learning.status = "Input captured: " & $text.len & " characters"
+      submitted = text
       state.input.clear()
     result = default Event
+
+proc submitLiveText(state: var AppState; text: string) =
+  if not state.agentReady:
+    state.status = "Agent runtime is not available"
+    return
+  if state.agent.pendingRequests() > 0:
+    state.status = "Waiting for the current agent request"
+    return
+
+  var err = ""
+  if state.agent.submitUserText(text, err):
+    state.status = state.agent.lastStatus
+    state.liveDoc = textUiDoc("Waiting", "Waiting for the chat response.")
+  else:
+    state.status = err
+
+proc handleSubmittedInput(state: var AppState; text: string) =
+  if text.strip().len == 0:
+    return
+
+  case state.mode
+  of appLocalDemo:
+    state.learning.status = "Input captured: " & $text.len & " characters"
+  of appLiveChat:
+    state.submitLiveText(text)
+
+proc handleLiveUiEvent(state: var AppState; ev: UiEvent) =
+  case ev.kind
+  of ueNone:
+    discard
+  of ueSelect:
+    state.status = "Selected " & ev.value
+  of ueClick, ueSubmitText:
+    state.submitLiveText(uiEventText(state.liveDoc, state.rt, ev))
+
+proc handleAdaptiveEvent(state: var AppState; ev: UiEvent) =
+  case state.mode
+  of appLocalDemo:
+    state.learning.handleLearningEvent(state.rt, ev)
+  of appLiveChat:
+    state.handleLiveUiEvent(ev)
+
+proc pollLiveAgent(state: var AppState) =
+  if state.mode != appLiveChat or not state.agentReady:
+    return
+
+  var item: AgentResult
+  while state.agent.pollAgent(item):
+    case item.kind
+    of agNone:
+      discard
+    of agError:
+      state.status = item.error
+      if state.liveDoc.areas.len == 0:
+        state.liveDoc = textUiDoc("Agent Error", item.error)
+    of agChatText:
+      state.liveDoc = textUiDoc("Chat", item.text)
+      var err = ""
+      if state.agent.enqueueUiDoc(state.liveDoc, err):
+        state.status = state.agent.lastStatus
+      else:
+        state.status = err
+    of agUiDoc:
+      state.liveDoc = item.doc
+      state.status = state.agent.lastStatus
 
 proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
   let bg = theme.scrollTrackColor
@@ -111,7 +221,7 @@ proc runLearningDemo*(title = "Adaptive UI Learning Demo";
   let theme = catppuccinMocha()
   setWindowTitle(title)
 
-  var state = initAppState(win.width, win.height, font, theme)
+  var state = initAppState(win.width, win.height, font, theme, appLocalDemo)
   var running = true
 
   while running:
@@ -143,18 +253,109 @@ proc runLearningDemo*(title = "Adaptive UI Learning Demo";
     fillRect(rect(0, 0, state.width, state.height), state.theme.scrollTrackColor)
 
     let adaptiveEvent = if state.focus == afAdaptive: e else: default Event
-    let ev = renderUiDoc(state.learning.doc, state.rt, adaptiveEvent,
+    let ev = renderUiDoc(state.currentDoc(), state.rt, adaptiveEvent,
       cells["adaptive"], font, fm, state.theme)
-    state.learning.handleLearningEvent(state.rt, ev)
+    state.handleAdaptiveEvent(ev)
 
-    let inputDrawEvent = state.inputEvent(if state.focus == afInput: e else: default Event)
+    var submitted = ""
+    let inputSourceEvent = if state.focus == afInput: e else: default Event
+    let inputDrawEvent = state.inputEvent(inputSourceEvent, submitted)
     fillRect(cells["input"], state.theme.bg)
     discard state.input.draw(inputDrawEvent, cells["input"].insetRect(8),
       state.focus == afInput)
+    state.handleSubmittedInput(submitted)
 
-    drawStatus(font, cells["status"], state.learning.status, state.theme)
+    drawStatus(font, cells["status"], state.currentStatus(), state.theme)
 
     refresh()
 
+  state.close()
+  closeFont(font)
+  shutdown()
+
+proc readAppConfig(path: string; status: var string): AppConfig =
+  var err = ""
+  if loadConfig(path, result, err):
+    if not fileExists(path):
+      status = "Using default config"
+  else:
+    result = initAppConfig()
+    status = "Config error: " & err
+
+proc runAdaptiveApp*(configPath = "adaptive_ui.json";
+    title = DefaultWindowTitle; width = DefaultWindowWidth;
+    height = DefaultWindowHeight) =
+  initBackend()
+  let win = createWindow(width, height)
+
+  var fm: FontMetrics
+  let font = openFont("", 16, fm)
+  let theme = catppuccinMocha()
+  setWindowTitle(title)
+
+  var status = ""
+  let cfg = readAppConfig(configPath, status)
+  let skills = loadSkills(cfg.skillRoots)
+  var state = initAppState(
+    win.width,
+    win.height,
+    font,
+    theme,
+    appLiveChat,
+    cfg,
+    skills,
+    status
+  )
+  if not state.agent.hasLiveConfig():
+    state.mode = appLocalDemo
+    state.learning.status = "Local demo: " & state.agent.lastStatus
+
+  var running = true
+  while running:
+    let cells = state.outerLayout.resolve(
+      state.width, state.height, fm.lineHeight, gap = 2)
+    let inputFlags =
+      if state.focus == afInput: {WantTextInput}
+      else: {}
+
+    var e = default Event
+    discard waitEvent(e, 16, inputFlags)
+    case e.kind
+    of QuitEvent, WindowCloseEvent:
+      running = false
+    of WindowResizeEvent, WindowMetricsEvent:
+      state.width = e.x
+      state.height = e.y
+    of MouseDownEvent:
+      if cells["input"].contains(point(e.x, e.y)):
+        state.focus = afInput
+      elif cells["adaptive"].contains(point(e.x, e.y)):
+        state.focus = afAdaptive
+    of KeyDownEvent:
+      if e.key == KeyEsc or (e.key == KeyQ and CtrlPressed in e.mods):
+        running = false
+    else:
+      discard
+
+    state.pollLiveAgent()
+    fillRect(rect(0, 0, state.width, state.height), state.theme.scrollTrackColor)
+
+    let adaptiveEvent = if state.focus == afAdaptive: e else: default Event
+    let ev = renderUiDoc(state.currentDoc(), state.rt, adaptiveEvent,
+      cells["adaptive"], font, fm, state.theme)
+    state.handleAdaptiveEvent(ev)
+
+    var submitted = ""
+    let inputSourceEvent = if state.focus == afInput: e else: default Event
+    let inputDrawEvent = state.inputEvent(inputSourceEvent, submitted)
+    fillRect(cells["input"], state.theme.bg)
+    discard state.input.draw(inputDrawEvent, cells["input"].insetRect(8),
+      state.focus == afInput)
+    state.handleSubmittedInput(submitted)
+
+    drawStatus(font, cells["status"], state.currentStatus(), state.theme)
+    refresh()
+
+  state.close()
   closeFont(font)
   shutdown()
