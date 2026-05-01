@@ -12,3 +12,4 @@ tests/test_config
 tests/test_skill_files
 tests/test_agent_runtime
 tests/test_interaction
+tests/test_markdown_math

@@ -3,7 +3,7 @@ import uirelays
 import uirelays/layout
 import widgets/synedit
 import widgets/theme
-import ./[components, ui_doc]
+import ./[components, markdown_view, math_view, ui_doc]
 
 const
   Pad = 8
@@ -25,7 +25,7 @@ proc drawBorder(r: Rect; c: Color) =
   drawLine(r.x + r.w - 1, r.y, r.x + r.w - 1, r.y + r.h - 1, c)
   drawLine(r.x, r.y + r.h - 1, r.x + r.w - 1, r.y + r.h - 1, c)
 
-proc languageFor(name: string): SourceLanguage =
+proc sourceLanguageFor*(name: string): SourceLanguage =
   case name.normalize.toLowerAscii
   of "nim", ".nim", "nims", ".nims":
     langNim
@@ -41,8 +41,20 @@ proc languageFor(name: string): SourceLanguage =
     langXml
   of "console", "transcript":
     langConsole
+  of "text", ".txt", "plain", "plaintext":
+    langNone
   else:
     langNone
+
+proc displayArea(area: UiArea): UiArea =
+  result = area
+  case area.kind
+  of ukText, ukTranscript:
+    result.text = formatMarkdownText(area.text)
+  of ukMath:
+    result.text = formatMathText(area.text)
+  of ukCode, ukRadio, ukButtons, ukTextInput:
+    discard
 
 proc ensureEditor(rt: var UiRuntime; area: UiArea; font: Font;
     theme: Theme): string =
@@ -61,7 +73,7 @@ proc syncReadOnlyEditor(rt: var UiRuntime; area: UiArea; font: Font;
   let lang =
     case area.kind
     of ukCode:
-      languageFor(area.language)
+      sourceLanguageFor(area.language)
     of ukTranscript:
       langConsole
     else:
@@ -219,24 +231,25 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
   result = noUiEvent()
   for areaDef in renderDoc.areas:
     if not cells.hasKey(areaDef.name):
-      continue
+      discard
+    else:
+      let areaView = displayArea(areaDef)
+      let r = cells[areaView.name]
+      let focused = rt.focus == areaView.name
+      let routedEvent = if focused: e else: default Event
+      let ev =
+        case areaView.kind
+        of ukText, ukTranscript, ukCode, ukMath:
+          renderTextArea(rt, areaView, routedEvent, r, focused, font, theme)
+        of ukRadio:
+          renderRadio(rt, areaView, routedEvent, r, fm, font, theme)
+        of ukButtons:
+          renderButtons(areaView, routedEvent, r, font, theme)
+        of ukTextInput:
+          renderTextInput(rt, areaView, routedEvent, r, focused, font, theme)
 
-    let r = cells[areaDef.name]
-    let focused = rt.focus == areaDef.name
-    let routedEvent = if focused: e else: default Event
-    let ev =
-      case areaDef.kind
-      of ukText, ukTranscript, ukCode, ukMath:
-        renderTextArea(rt, areaDef, routedEvent, r, focused, font, theme)
-      of ukRadio:
-        renderRadio(rt, areaDef, routedEvent, r, fm, font, theme)
-      of ukButtons:
-        renderButtons(areaDef, routedEvent, r, font, theme)
-      of ukTextInput:
-        renderTextInput(rt, areaDef, routedEvent, r, focused, font, theme)
-
-    if ev.kind != ueNone:
-      result = ev
+      if ev.kind != ueNone:
+        result = ev
 
   if renderDoc.areas.len == 0:
     discard drawText(font, area.x + Pad, area.y + Pad,

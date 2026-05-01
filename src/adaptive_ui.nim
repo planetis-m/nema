@@ -4,6 +4,8 @@ import adaptive_ui/components
 import adaptive_ui/config
 import adaptive_ui/interaction
 import adaptive_ui/learning
+import adaptive_ui/markdown_view
+import adaptive_ui/math_view
 import adaptive_ui/skill_files
 import adaptive_ui/ui_doc
 import adaptive_ui/ui_parse
@@ -15,6 +17,8 @@ export components
 export config
 export interaction
 export learning
+export markdown_view
+export math_view
 export skill_files
 export ui_doc
 export ui_parse
