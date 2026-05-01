@@ -31,6 +31,7 @@ type
     input: SynEdit
     focus: AppFocus
     doc: UiDoc
+    mainDoc: UiDoc
     debugLog: DebugLog
     status: string
     theme: Theme
@@ -50,6 +51,7 @@ proc initAppState(width, height: int; font: Font; theme: Theme;
     input: createSynEdit(font, theme),
     focus: afAdaptive,
     doc: introUiDoc(),
+    mainDoc: introUiDoc(),
     debugLog: initDebugLog(),
     status: initStatus,
     theme: theme,
@@ -63,8 +65,10 @@ proc close(state: var AppState) =
 proc currentStatus(state: AppState): string =
   if state.status.len > 0:
     result = state.status
-  elif state.agent.hasPending():
-    result = "Waiting for response..."
+  elif state.agent.hasPendingChat():
+    result = "Working..."
+  elif state.agent.hasPendingUi():
+    result = "Designing the next screen..."
   else:
     result = ""
 
@@ -78,6 +82,12 @@ proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
       state.input.clear()
     result = default Event
 
+proc replaceDoc(state: var AppState; doc: UiDoc; rememberMain = true) =
+  state.doc = doc
+  if rememberMain:
+    state.mainDoc = doc
+  state.rt.focus = ""
+
 proc submitText(state: var AppState; text: string) =
   let err = state.agent.submitChat(text)
   if err.len > 0:
@@ -88,18 +98,18 @@ proc submitText(state: var AppState; text: string) =
 proc startNewSession(state: var AppState; text: string) =
   state.rt = initUiRuntime()
   state.agent.clearHistory()
-  state.doc = introUiDoc()
+  state.replaceDoc(introUiDoc())
   state.status = "New adaptive session"
   if text.strip().len > 0:
     state.submitText(text)
 
 proc showTranscript(state: var AppState) =
-  state.doc = transcriptUiDoc(state.agent.chatHistory)
-  state.status = "Transcript"
+  state.replaceDoc(transcriptUiDoc(state.agent.chatHistory), rememberMain = false)
+  state.status = "Conversation history"
 
 proc showDebugLog(state: var AppState) =
-  state.doc = debugUiDoc(state.debugLog)
-  state.status = "Debug log"
+  state.replaceDoc(debugUiDoc(state.debugLog), rememberMain = false)
+  state.status = "Diagnostics"
 
 proc handleSubmittedInput(state: var AppState; text: string) =
   if text.strip().len == 0:
@@ -123,12 +133,9 @@ proc handleUiEvent(state: var AppState; ev: UiEvent) =
   of ueSelect:
     state.status = "Selected " & ev.value
   of ueClick, ueSubmitText:
-    if ev.area == "actions" and ev.id == "new":
-      state.startNewSession("")
-    elif ev.area == "actions" and ev.id == "transcript":
-      state.showTranscript()
-    elif ev.area == "actions" and ev.id == "debug":
-      state.showDebugLog()
+    if ev.id == "back" and ev.area == "utility_actions":
+      state.replaceDoc(state.mainDoc)
+      state.status = ""
     else:
       state.submitText(uiEventText(state.doc, state.rt, ev))
 
@@ -141,13 +148,14 @@ proc pollAgent(state: var AppState) =
       if res.text.len > 0:
         state.debugLog.addDebug(res.text)
     of resChatText:
+      state.replaceDoc(responseUiDoc(res.text))
       let err = state.agent.enqueueUi(state.doc)
       if err.len > 0:
         state.status = err
       else:
         state.status = ""
     of resUiDoc:
-      state.doc = res.doc
+      state.replaceDoc(res.doc)
       state.status = ""
 
 proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =

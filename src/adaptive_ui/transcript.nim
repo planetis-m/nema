@@ -24,13 +24,21 @@ proc transcriptUiDoc*(history: openArray[ChatEntry];
   UiDoc(
     version: 1,
     title: title,
-    layout: "| transcript, * |",
+    layout: """
+| transcript, * |
+| utility_actions, 3 lines |
+""",
     areas: @[
       UiArea(
         name: "transcript",
         kind: ukTranscript,
         text: formatTranscript(history)
+      ),
+      UiArea(
+        name: "utility_actions",
+        kind: ukButtons,
+        id: "utility_actions",
+        options: @[UiOption(id: "back", label: "Back")]
       )
     ],
-    focus: "transcript"
-  )
+    focus: "transcript"  )

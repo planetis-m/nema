@@ -11,5 +11,6 @@ block introDoc:
   let doc = introUiDoc()
   doAssert doc.version == 1
   doAssert doc.title == "Adaptive UI"
-  doAssert doc.areas.len == 4
-  doAssert doc.areas[3].kind == ukButtons
+  doAssert doc.areas.len == 2
+  doAssert doc.areas[1].name == "guide"
+

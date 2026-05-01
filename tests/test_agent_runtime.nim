@@ -34,6 +34,16 @@ block responseFormat:
   doAssert "\"required\":[\"version\",\"title\",\"layout\",\"focus\",\"areas\"]" in text
   doAssert "\"required\":[\"id\",\"label\",\"selected\"]" in text
 
+block promptWorkflowRules:
+  doAssert "choice" in ChatBasePrompt
+  doAssert "Next action: choose one" in UiBasePrompt
+  doAssert "radio area and a buttons" in UiBasePrompt
+  doAssert "textInput area" in UiBasePrompt
+  doAssert "Next action: type" in ChatBasePrompt
+  doAssert "Next action: none" in ChatBasePrompt
+  doAssert "side-by-side" in UiBasePrompt
+  doAssert "quiz-style" notin ChatBasePrompt
+
 block apiOpenAIError:
   let text = apiErrorMessage(422,
     """{"error":{"message":"Field required","type":"invalid_request_error","param":"messages","code":null}}""")
@@ -73,13 +83,15 @@ block pendingSubmit:
 
   doAssert state.submitChat("hello") == ""
   doAssert state.hasPending()
+  doAssert state.hasPendingChat()
+  doAssert not state.hasPendingUi()
   doAssert state.chatHistory.len == 0
 
   let err = state.submitChat("again")
   doAssert "in progress" in err
   doAssert state.chatHistory.len == 0
 
-  state.clearHistory()
+  state.clearPending()
   doAssert not state.hasPending()
   doAssert state.chatHistory.len == 0
 

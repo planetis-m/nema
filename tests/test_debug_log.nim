@@ -39,7 +39,10 @@ block uiDoc:
   log.addDebug("bad json")
   let doc = log.debugUiDoc()
   doAssert doc.title == "Debug Log"
-  doAssert doc.layout == "| debug, * |"
+  doAssert "utility_actions" in doc.layout
   doAssert doc.focus == "debug"
+  doAssert doc.areas.len == 2
   doAssert doc.areas[0].kind == ukText
+  doAssert doc.areas[1].kind == ukButtons
+  doAssert doc.areas[1].options[0].id == "back"
   doAssert "bad json" in doc.areas[0].text

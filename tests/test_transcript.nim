@@ -19,8 +19,10 @@ block uiDoc:
   ])
   doAssert doc.version == 1
   doAssert doc.title == "Transcript"
-  doAssert doc.layout == "| transcript, * |"
+  doAssert "utility_actions" in doc.layout
   doAssert doc.focus == "transcript"
-  doAssert doc.areas.len == 1
+  doAssert doc.areas.len == 2
   doAssert doc.areas[0].kind == ukTranscript
+  doAssert doc.areas[1].kind == ukButtons
+  doAssert doc.areas[1].options[0].id == "back"
   doAssert "User:" in doc.areas[0].text

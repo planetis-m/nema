@@ -33,13 +33,21 @@ proc debugUiDoc*(log: DebugLog): UiDoc =
   UiDoc(
     version: 1,
     title: "Debug Log",
-    layout: "| debug, * |",
+    layout: """
+| debug, * |
+| utility_actions, 3 lines |
+""",
     areas: @[
       UiArea(
         name: "debug",
         kind: ukText,
         text: text
+      ),
+      UiArea(
+        name: "utility_actions",
+        kind: ukButtons,
+        id: "utility_actions",
+        options: @[UiOption(id: "back", label: "Back")]
       )
     ],
-    focus: "debug"
-  )
+    focus: "debug"  )

@@ -8,28 +8,37 @@ import ./[config, ui_doc, ui_parse, ui_schema]
 {.passL: "-lcurl".}
 
 const
-  ChatBasePrompt* = "You are the chat agent for an adaptive desktop app. " &
-    "Answer the user plainly. " &
-    "Keep enough visible state in each response for a separate UI subagent to " &
-    "render the next screen. " &
-    "When the input describes UI values, clicked buttons, selected options, or " &
-    "submitted text, treat that as the user's interaction with the current generated UI. " &
-    "Do not force tasks into a fixed interaction pattern unless the user explicitly " &
-    "asks for that shape."
+  ChatBasePrompt* = "You are the reasoning agent for an adaptive desktop app. " &
+    "Maintain the task state and state the single next step plainly. " &
+    "For choice steps, include 'Next action: choose one' and an " &
+    "'Options:' list with short labels. " &
+    "When the user should type, include 'Next action: type' and ask for exactly " &
+    "the needed input. " &
+    "When no user action is needed, include 'Next action: none' and the final " &
+    "result. " &
+    "When input describes UI values, clicks, selections, or submitted text, treat " &
+    "it as the user's interaction with the current UI. " &
+    "Do not mention tabs, transcript, debug, JSON, or implementation details."
 
-  UiBasePrompt = "You are the UI subagent for a Nim desktop app. " &
-    "Return only one valid UiDoc JSON object. " &
-    "Use only supported area kinds and keep the layout compact.\n\n" &
-    "UiDoc contract:\n" &
-    "- Return JSON only.\n" &
-    "- version must be 1.\n" &
-    "- layout must be a uirelays markdown table.\n" &
-    "- Every area name must exist in layout.\n" &
+  UiBasePrompt* = "You are the UI designer for a Nim desktop app. " &
+    "Return only one valid UiDoc JSON object. Build a deterministic screen from " &
+    "the latest assistant response.\n\n" &
+    "Workflow rules:\n" &
+    "- Always read the latest assistant message first.\n" &
+    "- If it says 'Next action: choose one' or shows an Options list, render a " &
+    "radio area and a buttons area with one submit button.\n" &
+    "- If it says 'Next action: type' or asks for free-form input, render one " &
+    "textInput area with a clear submitLabel.\n" &
+    "- If it says 'Next action: none', render text, code, or math only.\n" &
+    "- Use one primary content area plus one interaction area when possible.\n" &
+    "- Keep labels short. Avoid side-by-side panels unless comparing items.\n" &
+    "- Never use transcript/debug as normal workflow screens.\n\n" &
+    "Contract:\n" &
+    "- Return JSON only. version must be 1.\n" &
+    "- layout must be a uirelays markdown table and every area name must exist " &
+    "in layout.\n" &
     "- Supported kinds: text, code, radio, buttons, textInput, math, transcript.\n" &
-    "- radio/buttons require id and non-empty options.\n" &
-    "- textInput requires id and may use placeholder and submitLabel.\n" &
-    "- Choose the smallest supported UI that fits the task. Do not default to a " &
-    "specific interaction pattern unless the conversation requires it."
+    "- radio/buttons require id and non-empty options. textInput requires id."
 
   MaxRetries = 3
 
@@ -112,6 +121,12 @@ proc close*(state: var AgentState) =
 
 proc hasPending*(state: AgentState): bool =
   state.phase != apIdle
+
+proc hasPendingChat*(state: AgentState): bool =
+  state.phase == apWaitingChat
+
+proc hasPendingUi*(state: AgentState): bool =
+  state.phase == apWaitingUi
 
 proc resetPending(state: var AgentState) =
   state.phase = apIdle
@@ -199,14 +214,18 @@ proc apiErrorMessage*(status: int; body: string): string =
   else:
     result = "HTTP " & $status & ": empty error response"
 
-proc clearHistory*(state: var AgentState) =
-  state.chatMessages = @[systemMessageText(ChatBasePrompt)]
-  state.chatHistory.setLen(0)
+proc clearPending*(state: var AgentState) =
   state.resetPending()
   if state.client != nil:
     state.client.clearQueue()
 
+proc clearHistory*(state: var AgentState) =
+  state.chatMessages = @[systemMessageText(ChatBasePrompt)]
+  state.chatHistory.setLen(0)
+  state.clearPending()
+
 proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc): string =
+  var latestAssistant = ""
   result = "Conversation so far:\n"
   if chatHistory.len == 0:
     result.add "(empty)\n"
@@ -217,6 +236,15 @@ proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc): string =
       result.add ": "
       result.add entry.content.strip()
       result.add "\n"
+      if entry.role == arAssistant:
+        latestAssistant = entry.content.strip()
+
+  result.add "\nLatest assistant message to turn into UI:\n"
+  if latestAssistant.len > 0:
+    result.add latestAssistant
+    result.add "\n"
+  else:
+    result.add "(none)\n"
   result.add "\nCurrent UiDoc JSON:\n"
   result.add toJson(currentDoc)
   result.add "\n\nReturn the next UiDoc JSON only."
