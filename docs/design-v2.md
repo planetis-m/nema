@@ -101,17 +101,20 @@ One normal submitted turn:
 1. User submits text from the bottom input.
 2. `handleSubmittedInput` parses generic slash commands.
 3. Normal text calls `submitChat`.
-4. `submitChat` appends a user chat message and starts a Relay request.
+4. `submitChat` starts a Relay request and stores the submitted text as pending
+   state.
 5. Each frame calls `pollAgent`.
-6. When chat text arrives, it is appended to history.
+6. When chat text arrives, the pending user text and assistant text are
+   committed to history.
 7. The app immediately enqueues a UI request with history plus current `UiDoc`.
 8. When UI JSON arrives, `parseUiDoc` validates it.
 9. A valid document replaces the current document.
 10. An invalid document is logged and the previous document remains visible.
 
 The app has one pending phase at a time: idle, waiting for chat, or waiting for
-UI. This keeps execution deterministic and avoids competing writes to
-conversation state.
+UI. `AgentState` stores the active Relay request id and ignores stale results.
+This keeps execution deterministic and avoids competing writes to conversation
+state.
 
 ## 7. Commands
 
@@ -260,19 +263,22 @@ extension point, not loaded implicitly from local files.
 }
 ```
 
-`saveConfig` must never write the API key. `parseConfig` fills an empty API key
-from `OPENAI_API_KEY`.
+`initAppConfig` reads `OPENAI_API_KEY` and sets the built-in defaults.
+`loadConfig(path)` starts from those defaults, then overlays `path` with
+`jsonx.fromFile(Path(path), result)` when the file exists. `saveConfig` must
+never write the API key.
 
 ## 13. Error Handling
 
-- Invalid config: use defaults and show a status message.
+- Invalid config: fail startup with the config path and parser message.
 - Missing API key: show intro document and status. Do not start model requests.
 - Chat request error: parse provider error JSON when possible, show a clear
   status message, and keep the current document.
 - UI request error or invalid JSON: parse provider error JSON when possible,
   show a clear status message, log raw text if present, and keep the current
   document.
-- Layout failure: render a fallback single text document.
+- Layout failure: generated documents fail `parseUiDoc`; static documents must
+  be valid in source.
 - Closed agent: return an error string to the app instead of raising.
 
 ## 14. Tests
@@ -288,7 +294,7 @@ Required coverage:
 - Generic command parsing.
 - Agent state initialization, empty input, and history clearing.
 - Provider API error parsing for OpenAI-style and validation-style responses.
-- Renderer state helpers and layout fallback.
+- Renderer state helpers and layout resolution.
 - Debug log, transcript, markdown, and math helpers.
 
 Run:

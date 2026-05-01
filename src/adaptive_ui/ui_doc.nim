@@ -99,6 +99,3 @@ proc textUiDoc*(title, text: string): UiDoc =
       )
     ]
   )
-
-proc fallbackUiDoc*(message: string): UiDoc =
-  textUiDoc("Adaptive UI", message)

@@ -2,38 +2,38 @@ import std/strutils
 import jsonx
 import adaptive_ui/[ui_doc, ui_parse]
 
-const ValidQuiz = """{
+const ValidDoc = """{
   "version": 1,
-  "title": "Quiz",
-  "layout": "| title, 2 lines |\n| prompt, * |\n| choices, 7 lines |\n| actions, 2 lines |",
+  "title": "Workspace",
+  "layout": "| title, 2 lines |\n| summary, * |\n| choices, 7 lines |\n| actions, 2 lines |",
   "focus": "choices",
   "areas": [
     {
       "name": "title",
       "kind": "text",
-      "text": "Question 1 of 3"
+      "text": "Workspace"
     },
     {
-      "name": "prompt",
+      "name": "summary",
       "kind": "text",
-      "text": "Which keyword declares an immutable local binding in Nim?"
+      "text": "Choose how to continue."
     },
     {
       "name": "choices",
       "kind": "radio",
-      "id": "q1_answer",
+      "id": "next_step",
       "options": [
-        { "id": "a", "label": "var" },
-        { "id": "b", "label": "let" },
-        { "id": "c", "label": "type" }
+        { "id": "inspect", "label": "Inspect" },
+        { "id": "edit", "label": "Edit" },
+        { "id": "run", "label": "Run" }
       ]
     },
     {
       "name": "actions",
       "kind": "buttons",
-      "id": "q1_actions",
+      "id": "actions",
       "options": [
-        { "id": "submit", "label": "Submit" }
+        { "id": "continue", "label": "Continue" }
       ]
     }
   ]
@@ -45,13 +45,13 @@ proc parses(text: string; doc: var UiDoc; err: var string): bool =
 block:
   var doc: UiDoc
   var err = ""
-  doAssert parses(ValidQuiz, doc, err), err
+  doAssert parses(ValidDoc, doc, err), err
   doAssert doc.version == 1
-  doAssert doc.title == "Quiz"
+  doAssert doc.title == "Workspace"
   doAssert doc.focus == "choices"
   doAssert doc.areas.len == 4
   doAssert doc.areas[2].kind == ukRadio
-  doAssert doc.areas[2].options[1].label == "let"
+  doAssert doc.areas[2].options[1].label == "Edit"
 
 block:
   let json = toJson(UiArea(name: "main", kind: ukText, text: "hello"))
@@ -125,10 +125,3 @@ block:
   var doc: UiDoc
   var err = ""
   doAssert parses(json, doc, err), err
-
-block:
-  let doc = fallbackUiDoc("The generated UI could not be rendered.")
-  doAssert doc.version == 1
-  doAssert doc.layout == FallbackLayout
-  doAssert doc.areas.len == 1
-  doAssert doc.areas[0].name == "main"

@@ -1,5 +1,4 @@
 import std/[strutils, tables]
-from std/os import fileExists
 import uirelays
 import uirelays/backend
 import uirelays/layout
@@ -156,11 +155,9 @@ proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
   fillRect(r, bg)
   discard drawText(font, r.x + 8, r.y + 5, text, theme.fg[TokenClass.Text], bg)
 
-proc readAppConfig(path: string; status: var string): AppConfig =
+proc readAppConfig(path: string): AppConfig =
   try:
     result = loadConfig(path)
-    if not fileExists(path):
-      status = "Using default config"
   except CatchableError as e:
     quit "Config error in " & path & ": " & e.msg, 1
 
@@ -175,15 +172,13 @@ proc runApp*(configPath = "adaptive_app.json";
   let theme = catppuccinMocha()
   setWindowTitle(title)
 
-  var status = ""
-  let cfg = readAppConfig(configPath, status)
+  let cfg = readAppConfig(configPath)
   var state = initAppState(
     win.width,
     win.height,
     font,
     theme,
-    cfg,
-    status
+    cfg
   )
 
   var running = true

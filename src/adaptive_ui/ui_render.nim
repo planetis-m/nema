@@ -275,29 +275,20 @@ proc drawEmptyCells(doc: UiDoc; cells: Table[string, Rect]; theme: Theme) =
     fillRect(r, theme.bg)
     drawBorder(r, theme.scrollTrackColor)
 
-proc resolveUiDocCells*(doc: UiDoc; rt: var UiRuntime; area: Rect;
-    lineHeight: int; renderDoc: var UiDoc): Table[string, Rect] =
+proc resolveUiDocCells*(doc: UiDoc; area: Rect; lineHeight: int): Table[string, Rect] =
   let parsed = parseLayout(doc.layout)
   result = parsed.resolve(area.w, area.h, lineHeight, gap = 2)
-  if result.len > 0:
-    renderDoc = doc
-  else:
-    renderDoc = fallbackUiDoc("The generated UI layout could not be rendered.")
-    result = parseLayout(renderDoc.layout).resolve(area.w, area.h, lineHeight, gap = 2)
-
   for name, r in result.mpairs:
     r = r.offset(area)
 
 proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
     font: Font; fm: FontMetrics; theme: Theme = catppuccinMocha()): UiEvent =
-  var renderDoc: UiDoc
-  var cells = resolveUiDocCells(doc, rt, area, fm.lineHeight, renderDoc)
+  var cells = resolveUiDocCells(doc, area, fm.lineHeight)
   fillRect(area, theme.bg)
-  drawEmptyCells(renderDoc, cells, theme)
+  drawEmptyCells(doc, cells, theme)
 
-  if rt.focus.len == 0 and renderDoc.focus.len > 0 and
-      cells.hasKey(renderDoc.focus):
-    rt.setFocus(renderDoc.focus)
+  if rt.focus.len == 0 and doc.focus.len > 0 and cells.hasKey(doc.focus):
+    rt.setFocus(doc.focus)
 
   if e.kind == MouseDownEvent:
     let hit = cells.hitTest(e.x, e.y)
@@ -305,7 +296,7 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
       rt.setFocus(hit.name)
 
   result = noUiEvent()
-  for areaDef in renderDoc.areas:
+  for areaDef in doc.areas:
     let areaView = displayArea(areaDef)
     let r = cells[areaView.name]
     let focused = rt.focus == areaView.name

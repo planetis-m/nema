@@ -64,10 +64,11 @@ type
     cfg*: AppConfig
     chatMessages: seq[ChatMessage]
     chatHistory*: seq[ChatEntry]
-    uiSystemMsg: ChatMessage
-    uiFormat: ResponseFormat
     phase: AgentPhase
     attempt: int
+    activeRequestId: int64
+    pendingChatMessages: seq[ChatMessage]
+    pendingUserText: string
     pendingDoc: UiDoc
     nextId: int64
 
@@ -96,13 +97,11 @@ proc initAgentState*(cfg: AppConfig): AgentState =
       apiKey: cfg.apiKey
     ),
     client: newRelay(
-      maxInFlight = 2,
+      maxInFlight = 1,
       defaultTimeoutMs = cfg.timeoutMs,
       maxRedirects = 5
     ),
     chatMessages: @[systemMessageText(ChatBasePrompt)],
-    uiSystemMsg: systemMessageText(UiBasePrompt),
-    uiFormat: uiDocFmt,
     nextId: 1
   )
 
@@ -113,6 +112,14 @@ proc close*(state: var AgentState) =
 
 proc hasPending*(state: AgentState): bool =
   state.phase != apIdle
+
+proc resetPending(state: var AgentState) =
+  state.phase = apIdle
+  state.attempt = 0
+  state.activeRequestId = 0
+  state.pendingChatMessages.setLen(0)
+  state.pendingUserText = ""
+  state.pendingDoc = UiDoc()
 
 proc appendField(text: var string; name, value: string) =
   if value.strip().len == 0:
@@ -193,12 +200,11 @@ proc apiErrorMessage*(status: int; body: string): string =
     result = "HTTP " & $status & ": empty error response"
 
 proc clearHistory*(state: var AgentState) =
-  let sysMsg = if state.chatMessages.len > 0: state.chatMessages[0]
-               else: systemMessageText(ChatBasePrompt)
-  state.chatMessages = @[sysMsg]
+  state.chatMessages = @[systemMessageText(ChatBasePrompt)]
   state.chatHistory.setLen(0)
-  state.phase = apIdle
-  state.attempt = 0
+  state.resetPending()
+  if state.client != nil:
+    state.client.clearQueue()
 
 proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc): string =
   result = "Conversation so far:\n"
@@ -216,8 +222,8 @@ proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc): string =
   result.add "\n\nReturn the next UiDoc JSON only."
 
 proc enqueue(state: var AgentState; messages: seq[ChatMessage];
-    model: string; maxTokens: int; responseFormat: ResponseFormat) =
-  let requestId = state.nextId
+    model: string; maxTokens: int; responseFormat: ResponseFormat): int64 =
+  result = state.nextId
   inc state.nextId
   var batch: RequestBatch
   chatAdd(
@@ -231,14 +237,18 @@ proc enqueue(state: var AgentState; messages: seq[ChatMessage];
       toolChoice = ToolChoice.none,
       responseFormat = responseFormat
     ),
-    requestId = requestId,
+    requestId = result,
     timeoutMs = state.cfg.timeoutMs
   )
   state.client.startRequests(batch)
 
-proc buildUiMessages(state: AgentState): seq[ChatMessage] =
-  result.add state.uiSystemMsg
-  result.add userMessageText(formatUiUserMsg(state.chatHistory, state.pendingDoc))
+proc buildUiMessages(state: AgentState; currentDoc: UiDoc): seq[ChatMessage] =
+  result.add systemMessageText(UiBasePrompt)
+  result.add userMessageText(formatUiUserMsg(state.chatHistory, currentDoc))
+
+proc busyError(state: AgentState): string =
+  if state.phase != apIdle:
+    result = "request already in progress"
 
 proc submitChat*(state: var AgentState; userText: string): string =
   let text = userText.strip()
@@ -246,31 +256,39 @@ proc submitChat*(state: var AgentState; userText: string): string =
     return "input is empty"
   if state.client == nil:
     return "agent is closed"
+  let busy = state.busyError()
+  if busy.len > 0:
+    return busy
   if not state.cfg.hasKey():
-    return "Set OPENAI_API_KEY for generated UI."
-  state.chatMessages.add userMessageText(text)
-  state.chatHistory.add ChatEntry(role: arUser, content: text)
+    return "Set apiKey in adaptive_app.json or OPENAI_API_KEY."
+  let messages = state.chatMessages & @[userMessageText(text)]
+  try:
+    state.activeRequestId = state.enqueue(messages, state.cfg.chatModel, 800,
+      formatText)
+  except IOError:
+    state.resetPending()
+    return getCurrentExceptionMsg()
   state.phase = apWaitingChat
   state.attempt = 1
-  try:
-    state.enqueue(state.chatMessages, state.cfg.chatModel, 800, formatText)
-  except IOError:
-    state.phase = apIdle
-    return getCurrentExceptionMsg()
+  state.pendingChatMessages = messages
+  state.pendingUserText = text
   result = ""
 
 proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
   if state.client == nil:
     return "agent is closed"
-  state.pendingDoc = currentDoc
+  let busy = state.busyError()
+  if busy.len > 0:
+    return busy
+  try:
+    state.activeRequestId = state.enqueue(state.buildUiMessages(currentDoc),
+      state.cfg.uiModel, 1200, uiDocFmt)
+  except IOError:
+    state.resetPending()
+    return getCurrentExceptionMsg()
   state.phase = apWaitingUi
   state.attempt = 1
-  try:
-    state.enqueue(state.buildUiMessages(), state.cfg.uiModel, 1200,
-      state.uiFormat)
-  except IOError:
-    state.phase = apIdle
-    return getCurrentExceptionMsg()
+  state.pendingDoc = currentDoc
   result = ""
 
 proc extractText(item: RequestResult): string =
@@ -297,47 +315,80 @@ proc retryCurrent(state: var AgentState): bool =
   if state.attempt >= MaxRetries:
     return false
   inc state.attempt
+  try:
+    case state.phase
+    of apWaitingChat:
+      state.activeRequestId = state.enqueue(state.pendingChatMessages,
+        state.cfg.chatModel, 800, formatText)
+    of apWaitingUi:
+      state.activeRequestId = state.enqueue(
+        state.buildUiMessages(state.pendingDoc), state.cfg.uiModel, 1200,
+        uiDocFmt)
+    of apIdle:
+      return false
+    result = true
+  except IOError:
+    state.resetPending()
+    raise
+
+proc pollActiveResult(state: var AgentState; item: var RequestResult): bool =
+  if state.client == nil:
+    return false
+
+  while state.client.pollForResult(item):
+    if state.phase != apIdle and
+        item.response.request.requestId == state.activeRequestId:
+      return true
+
+  result = false
+
+proc finishChat(state: var AgentState; text: string; outResult: var AgentResult) =
+  state.chatMessages = state.pendingChatMessages
+  state.chatMessages.add assistantMessageText(text)
+  state.chatHistory.add ChatEntry(role: arUser, content: state.pendingUserText)
+  state.chatHistory.add ChatEntry(role: arAssistant, content: text)
+  state.resetPending()
+  outResult = AgentResult(kind: resChatText, text: text)
+
+proc finishUi(state: var AgentState; text: string; outResult: var AgentResult) =
+  var doc: UiDoc
+  var parseErr = ""
+  state.resetPending()
+  if parseUiDoc(text, doc, parseErr):
+    outResult = AgentResult(kind: resUiDoc, text: text, doc: doc)
+  else:
+    outResult = AgentResult(kind: resError,
+      error: "invalid UI document: " & parseErr, text: text)
+
+proc finishSuccess(state: var AgentState; text: string;
+    outResult: var AgentResult) =
   case state.phase
   of apWaitingChat:
-    state.enqueue(state.chatMessages, state.cfg.chatModel, 800, formatText)
+    state.finishChat(text, outResult)
   of apWaitingUi:
-    state.enqueue(state.buildUiMessages(), state.cfg.uiModel, 1200,
-      state.uiFormat)
-  else:
-    return false
-  result = true
+    state.finishUi(text, outResult)
+  of apIdle:
+    discard
 
 proc poll*(state: var AgentState; outResult: var AgentResult): bool =
-  if state.client == nil or state.phase == apIdle:
-    return false
-
   var item: RequestResult
-  if not state.client.pollForResult(item):
+  if not state.pollActiveResult(item):
     return false
 
   try:
     let text = extractText(item)
-    let phase = state.phase
-    state.phase = apIdle
-    if phase == apWaitingChat:
-      state.chatMessages.add assistantMessageText(text)
-      state.chatHistory.add ChatEntry(role: arAssistant, content: text)
-      outResult = AgentResult(kind: resChatText, text: text)
-    else:
-      var doc: UiDoc
-      var parseErr = ""
-      if parseUiDoc(text, doc, parseErr):
-        outResult = AgentResult(kind: resUiDoc, text: text, doc: doc)
-      else:
-        outResult = AgentResult(kind: resError,
-          error: "invalid UI document: " & parseErr, text: text)
+    state.finishSuccess(text, outResult)
   except CatchableError:
     let err = getCurrentExceptionMsg()
     let attemptBefore = state.attempt
-    if isRetriable(item) and state.retryCurrent():
+    try:
+      if isRetriable(item) and state.retryCurrent():
+        outResult = AgentResult(kind: resError,
+          error: "retrying (" & $attemptBefore & "/" & $MaxRetries & "): " & err)
+      else:
+        state.resetPending()
+        outResult = AgentResult(kind: resError, error: err)
+    except CatchableError:
       outResult = AgentResult(kind: resError,
-        error: "retrying (" & $attemptBefore & "/" & $MaxRetries & "): " & err)
-    else:
-      state.phase = apIdle
-      outResult = AgentResult(kind: resError, error: err)
+        error: "retry failed: " & getCurrentExceptionMsg())
   return true

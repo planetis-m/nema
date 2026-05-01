@@ -3,77 +3,65 @@ import jsonx
 import uirelays/layout
 import ./ui_doc
 
-proc fail(err: var string; message: string): bool =
-  err = message
-  result = false
+proc requireValid(condition: bool; message: string) =
+  if not condition:
+    raise newException(ValueError, message)
 
-proc validateArea(area: UiArea; index: int; err: var string): bool =
-  if area.name.strip.len == 0:
-    return fail(err, "area " & $index & " has empty name")
+proc validateArea(area: UiArea; index: int) =
+  requireValid(area.name.strip.len > 0, "area " & $index & " has empty name")
 
   case area.kind
   of ukRadio, ukButtons:
-    if area.id.strip.len == 0:
-      return fail(err, "area " & area.name & " requires id")
-    if area.options.len == 0:
-      return fail(err, "area " & area.name & " requires options")
+    requireValid(area.id.strip.len > 0, "area " & area.name & " requires id")
+    requireValid(area.options.len > 0,
+      "area " & area.name & " requires options")
     for optionIndex, option in area.options:
-      if option.id.strip.len == 0:
-        return fail(err, "area " & area.name &
-          " option " & $optionIndex & " has empty id")
-      if option.label.strip.len == 0:
-        return fail(err, "area " & area.name &
-          " option " & $optionIndex & " has empty label")
+      requireValid(option.id.strip.len > 0,
+        "area " & area.name & " option " & $optionIndex & " has empty id")
+      requireValid(option.label.strip.len > 0,
+        "area " & area.name & " option " & $optionIndex &
+        " has empty label")
   of ukTextInput:
-    if area.id.strip.len == 0:
-      return fail(err, "area " & area.name & " requires id")
+    requireValid(area.id.strip.len > 0, "area " & area.name & " requires id")
   of ukText, ukCode, ukMath, ukTranscript:
     discard
 
-  result = true
-
-proc validateLayoutAreas(doc: UiDoc; err: var string): bool =
+proc validateLayoutAreas(doc: UiDoc) =
   try:
     let layout = parseLayout(doc.layout)
     let cells = layout.resolve(1000, 1000, lineHeight = 20)
-    if cells.len == 0:
-      return fail(err, "layout has no cells")
+    requireValid(cells.len > 0, "layout has no cells")
 
     var names = initHashSet[string]()
     for area in doc.areas:
-      if names.contains(area.name):
-        return fail(err, "duplicate area name " & area.name)
+      requireValid(not names.contains(area.name),
+        "duplicate area name " & area.name)
       names.incl area.name
-      if not cells.hasKey(area.name):
-        return fail(err, "area " & area.name & " is not in layout")
+      requireValid(cells.hasKey(area.name),
+        "area " & area.name & " is not in layout")
 
-    if doc.focus.strip.len > 0 and not cells.hasKey(doc.focus):
-      return fail(err, "focus " & doc.focus & " is not in layout")
-
-    result = true
+    requireValid(doc.focus.strip.len == 0 or cells.hasKey(doc.focus),
+      "focus " & doc.focus & " is not in layout")
   except CatchableError:
-    result = fail(err, "layout parse error: " & getCurrentExceptionMsg())
+    raise newException(ValueError,
+      "layout parse error: " & getCurrentExceptionMsg())
 
-proc validateUiDoc(doc: UiDoc; err: var string): bool =
-  if doc.version != 1:
-    return fail(err, "unsupported UI document version " & $doc.version)
-  if doc.layout.strip.len == 0:
-    return fail(err, "layout is empty")
-  if doc.areas.len == 0:
-    return fail(err, "areas is empty")
+proc validateUiDoc(doc: UiDoc) =
+  requireValid(doc.version == 1,
+    "unsupported UI document version " & $doc.version)
+  requireValid(doc.layout.strip.len > 0, "layout is empty")
+  requireValid(doc.areas.len > 0, "areas is empty")
 
   for i, area in doc.areas:
-    if not validateArea(area, i, err):
-      return false
+    validateArea(area, i)
 
-  result = validateLayoutAreas(doc, err)
+  validateLayoutAreas(doc)
 
 proc parseUiDoc*(text: string; doc: var UiDoc; err: var string): bool =
   err = ""
   try:
     let parsed = fromJson(text, UiDoc)
-    if not validateUiDoc(parsed, err):
-      return false
+    validateUiDoc(parsed)
     doc = parsed
     result = true
   except CatchableError:

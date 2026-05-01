@@ -81,19 +81,20 @@ One submitted turn follows this path:
 
 1. The user types in the bottom input and presses Ctrl+Enter or Cmd+Enter.
 2. `app.nim` reads the input, clears the editor, and parses generic commands.
-3. Normal text is appended to `AgentState.chatHistory` and submitted through
-   `relay.startRequests`.
+3. Normal text is submitted through `relay.startRequests`. The submitted user
+   text is held as pending state until the chat response succeeds.
 4. Each frame, `pollAgent` calls `poll` to drain completed network results.
-5. When chat text arrives, it is appended to history and a UI request is
-   enqueued.
+5. When chat text arrives, the user text and assistant text are committed to
+   history, then a UI request is enqueued.
 6. The UI request includes conversation history and the current `UiDoc` JSON.
 7. The UI response is parsed with `jsonx` and validated by `parseUiDoc`.
 8. `ui_render.nim` resolves `doc.layout` with `parseLayout` and `resolve`.
 9. Components draw inside named cells and may emit one `UiEvent`.
 10. `interaction.nim` converts component events into text for the next turn.
 
-Chat and UI requests are sequential. The app tracks one pending request phase at
-a time and never blocks the render loop.
+Chat and UI requests are sequential. The app tracks one pending request phase
+and one active Relay request id at a time. Old results whose request id no
+longer matches the active request are ignored. The render loop never blocks.
 
 ## Commands
 
@@ -156,7 +157,6 @@ Persist only state needed across frames:
 - selected radio option.
 - text input value.
 - current focus name.
-- short runtime status.
 
 Do not build a retained widget tree.
 
@@ -198,10 +198,12 @@ and must not alter the default core prompt.
 
 - UI JSON parse failure: keep the previous `UiDoc`, show a status error, and add
   the raw response to `DebugLog`.
-- Layout failure: render a fallback single text area.
+- Layout failure is rejected by `parseUiDoc` before rendering generated
+  documents. Static documents must be valid in source.
 - Network error: show status, keep the previous `UiDoc`, and keep running.
 - API error body: parse common provider error JSON and show a concise message.
 - Missing API key: open in preview mode with the intro document.
+- Invalid config JSON: fail at startup with the config path and parser message.
 
 ## Evidence Required
 
@@ -209,7 +211,7 @@ The current concept is considered working only when these are true:
 
 - Static `UiDoc` parsing validates supported and invalid documents.
 - Renderer tests cover component state, selection, submit events, and layout
-  fallback.
+  resolution.
 - `tests/tester.nim` compiles and runs all non-network tests with `-d:sdl3`.
 - The app target and examples compile without requiring an API key.
 - Live model calls, when configured, use Relay polling and never call blocking

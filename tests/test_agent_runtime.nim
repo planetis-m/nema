@@ -10,6 +10,14 @@ let cfgMissing = AppConfig(
   timeoutMs: 1000
 )
 
+let cfgWithKey = AppConfig(
+  apiUrl: "https://example.invalid/v1/chat/completions",
+  apiKey: "sk-test",
+  chatModel: "chat-model",
+  uiModel: "ui-model",
+  timeoutMs: 1000
+)
+
 block configHasKey:
   doAssert not cfgMissing.hasKey()
   doAssert AppConfig(
@@ -58,6 +66,22 @@ block missingKeySubmit:
   doAssert "OPENAI_API_KEY" in err
   doAssert state.chatHistory.len == 0
   doAssert not state.hasPending()
+
+block pendingSubmit:
+  var state = initAgentState(cfgWithKey)
+  defer: state.close()
+
+  doAssert state.submitChat("hello") == ""
+  doAssert state.hasPending()
+  doAssert state.chatHistory.len == 0
+
+  let err = state.submitChat("again")
+  doAssert "in progress" in err
+  doAssert state.chatHistory.len == 0
+
+  state.clearHistory()
+  doAssert not state.hasPending()
+  doAssert state.chatHistory.len == 0
 
 block clearNewState:
   var state = initAgentState(cfgMissing)

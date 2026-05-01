@@ -52,12 +52,8 @@ block:
       UiArea(name: "body", kind: ukText, text: "Body")
     ]
   )
-  var rt = initUiRuntime()
-  var renderDoc: UiDoc
-  let cells = resolveUiDocCells(doc, rt, rect(10, 20, 300, 200),
-    fm.lineHeight, renderDoc)
+  let cells = resolveUiDocCells(doc, rect(10, 20, 300, 200), fm.lineHeight)
 
-  doAssert renderDoc.title == ""
   doAssert cells.hasKey("title")
   doAssert cells.hasKey("body")
   doAssert cells["title"].x == 10
@@ -78,29 +74,12 @@ block:
       UiArea(name: "body", kind: ukText, text: "Body")
     ]
   )
-  var rt = initUiRuntime()
-  var renderDoc: UiDoc
-  let cells = resolveUiDocCells(doc, rt, rect(0, 0, 300, 200),
-    fm.lineHeight, renderDoc)
-  let missing = renderDoc.missingCellNames(cells)
+  let cells = resolveUiDocCells(doc, rect(0, 0, 300, 200), fm.lineHeight)
+  let missing = doc.missingCellNames(cells)
 
   doAssert cells.hasKey("aside")
   doAssert missing.len == 1
   doAssert missing[0] == "aside"
-
-block:
-  let doc = UiDoc(
-    version: 1,
-    layout: "not a layout",
-    areas: @[UiArea(name: "main", kind: ukText, text: "ignored")]
-  )
-  var rt = initUiRuntime()
-  var renderDoc: UiDoc
-  let cells = resolveUiDocCells(doc, rt, rect(0, 0, 240, 80),
-    fm.lineHeight, renderDoc)
-
-  doAssert renderDoc.title == "Adaptive UI"
-  doAssert cells.hasKey("main")
 
 block:
   let area = UiArea(
