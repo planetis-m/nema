@@ -260,7 +260,7 @@ proc submitChat*(state: var AgentState; userText: string): string =
   if busy.len > 0:
     return busy
   if not state.cfg.hasKey():
-    return "Set apiKey in adaptive_app.json or OPENAI_API_KEY."
+    return "Set apiKey in config or OPENAI_API_KEY."
   let messages = state.chatMessages & @[userMessageText(text)]
   try:
     state.activeRequestId = state.enqueue(messages, state.cfg.chatModel, 800,

@@ -41,7 +41,7 @@ proc initAppState(width, height: int; font: Font; theme: Theme;
   let initStatus =
     if status.len > 0: status
     elif cfg.hasKey(): "Agent ready"
-    else: "Set OPENAI_API_KEY for generated UI."
+    else: "Set apiKey in config or OPENAI_API_KEY."
   result = AppState(
     width: width,
     height: height,
@@ -161,7 +161,7 @@ proc readAppConfig(path: string): AppConfig =
   except CatchableError as e:
     quit "Config error in " & path & ": " & e.msg, 1
 
-proc runApp*(configPath = "adaptive_app.json";
+proc runApp*(configPath = "adaptive_ui.json";
     title = DefaultWindowTitle; width = DefaultWindowWidth;
     height = DefaultWindowHeight) =
   initBackend()
