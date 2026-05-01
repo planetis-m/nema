@@ -1,4 +1,4 @@
-import std/[strutils, tables]
+import std/[strutils, tables, strformat]
 import uirelays
 import uirelays/backend
 import uirelays/layout
@@ -142,19 +142,23 @@ proc handleUiEvent(state: var AppState; ev: UiEvent) =
 proc pollAgent(state: var AppState) =
   var res: AgentResult
   while state.agent.poll(res):
+    stderr.writeLine fmt"[APP] pollAgent: res.kind={res.kind}"
     case res.kind
     of resError:
+      stderr.writeLine fmt"[APP] resError: {res.error}"
       state.status = res.error
       if res.text.len > 0:
         state.debugLog.addDebug(res.text)
     of resChatText:
-      state.replaceDoc(responseUiDoc(res.text))
-      let err = state.agent.enqueueUi(state.doc)
+      stderr.writeLine fmt"[APP] resChatText: enqueueing UI"
+      let err = state.agent.enqueueUi(state.mainDoc)
       if err.len > 0:
+        stderr.writeLine fmt"[APP] enqueueUi returned error: {err}"
         state.status = err
       else:
-        state.status = ""
+        state.status = "Designing the next screen..."
     of resUiDoc:
+      stderr.writeLine fmt"[APP] resUiDoc: title={res.doc.title} areas={res.doc.areas.len}"
       state.replaceDoc(res.doc)
       state.status = ""
 

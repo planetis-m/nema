@@ -233,16 +233,22 @@ Rules:
 `ChatBasePrompt` must stay generic:
 
 - Answer the user.
-- Maintain enough visible task state for UI generation.
+- Maintain enough visible task state for UI generation, including one
+  `Next action: choose one|type|none` line when an action is needed.
+- Put choice labels under `Options:` and put code in fenced blocks with a
+  language name.
 - Treat UI event summaries as user interaction.
 - Do not force a fixed interaction pattern unless the user requested it.
 
 `UiBasePrompt` must stay generic:
 
 - Return only one valid `UiDoc` JSON object.
+- Convert the latest chat response structure into explicit components.
 - Use only supported kinds.
 - Keep layouts compact.
 - Choose the smallest UI that fits current task state.
+- Put code in `code` areas and choices in `radio`/`buttons`; do not rely on
+  markdown rendering.
 - Do not reference unsupported app capabilities.
 
 Do not add prompt branches for specific workflows in `agent.nim`. Optional

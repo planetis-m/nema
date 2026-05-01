@@ -1,5 +1,6 @@
 import std/strutils
 import jsonx
+import openai/chat
 import adaptive_ui/[agent, config, ui_schema]
 
 let cfgMissing = AppConfig(
@@ -34,14 +35,26 @@ block responseFormat:
   doAssert "\"required\":[\"version\",\"title\",\"layout\",\"focus\",\"areas\"]" in text
   doAssert "\"required\":[\"id\",\"label\",\"selected\"]" in text
 
+block uiRequestResponseFormat:
+  let request = chatCreate(
+    model = "ui-model",
+    messages = @[systemMessageText(UiBasePrompt)],
+    responseFormat = uiDocFmt
+  )
+  let text = toJson(request)
+  doAssert "\"response_format\":{\"type\":\"json_schema\"" in text
+  doAssert "\"response_format\":{\"type\":\"json\"" notin text
+
 block promptWorkflowRules:
-  doAssert "choice" in ChatBasePrompt
+  doAssert "Chat Agent" in ChatBasePrompt
+  doAssert "UI Agent" in UiBasePrompt
   doAssert "Next action: choose one" in UiBasePrompt
-  doAssert "radio area and a buttons" in UiBasePrompt
+  doAssert "radio area plus buttons area" in UiBasePrompt
   doAssert "textInput area" in UiBasePrompt
   doAssert "Next action: type" in ChatBasePrompt
   doAssert "Next action: none" in ChatBasePrompt
-  doAssert "side-by-side" in UiBasePrompt
+  doAssert "fenced code -> code area" in UiBasePrompt
+  doAssert "Do not ask the renderer to interpret markdown" in UiBasePrompt
   doAssert "quiz-style" notin ChatBasePrompt
 
 block apiOpenAIError:

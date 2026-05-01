@@ -85,7 +85,8 @@ One submitted turn follows this path:
    text is held as pending state until the chat response succeeds.
 4. Each frame, `pollAgent` calls `poll` to drain completed network results.
 5. When chat text arrives, the user text and assistant text are committed to
-   history, then a UI request is enqueued.
+   history, then a UI request is enqueued. The chat text is not rendered as a
+   provisional screen.
 6. The UI request includes conversation history and the current `UiDoc` JSON.
 7. The UI response is parsed with `jsonx` and validated by `parseUiDoc`.
 8. `ui_render.nim` resolves `doc.layout` with `parseLayout` and `resolve`.
@@ -180,12 +181,17 @@ Chat agent:
 
 - Answers the submitted text.
 - Maintains task state in visible response text.
+- Emits a compact response structure: heading/body, optional fenced code,
+  exactly one `Next action: choose one|type|none` line, and an `Options:` list
+  only for choice steps.
 - Treats UI event summaries as user interaction with the current generated UI.
 - Does not force any fixed workflow unless the user asks for that shape.
 
 UI subagent:
 
 - Returns only one valid `UiDoc` JSON object.
+- Interprets the latest chat response and maps its structure to explicit
+  components; it does not ask the renderer to interpret markdown.
 - Uses only the supported component kinds.
 - Chooses the smallest UI that represents the current task state.
 - Does not invent unsupported capabilities.

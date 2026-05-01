@@ -1,4 +1,4 @@
-import std/[options, strutils]
+import std/[options, strutils, strformat]
 import jsonx
 import relay
 import openai/chat
@@ -8,37 +8,44 @@ import ./[config, ui_doc, ui_parse, ui_schema]
 {.passL: "-lcurl".}
 
 const
-  ChatBasePrompt* = "You are the reasoning agent for an adaptive desktop app. " &
-    "Maintain the task state and state the single next step plainly. " &
-    "For choice steps, include 'Next action: choose one' and an " &
-    "'Options:' list with short labels. " &
-    "When the user should type, include 'Next action: type' and ask for exactly " &
-    "the needed input. " &
-    "When no user action is needed, include 'Next action: none' and the final " &
-    "result. " &
-    "When input describes UI values, clicks, selections, or submitted text, treat " &
-    "it as the user's interaction with the current UI. " &
-    "Do not mention tabs, transcript, debug, JSON, or implementation details."
+  ChatBasePrompt* = "You are the Chat Agent for an adaptive desktop app. " &
+    "Answer the user's task and keep the task state in visible text. " &
+    "Use this simple structure when it applies: a short heading, body text, " &
+    "optional fenced code blocks with language names, exactly one " &
+    "'Next action: choose one|type|none' line, and an 'Options:' list only for " &
+    "choice steps. For choice steps, provide short option labels. For type " &
+    "steps, use 'Next action: type' and ask for exactly the needed input. " &
+    "For completed steps, use 'Next action: none'. Treat UI values, clicks, " &
+    "selections, and submitted text as the user's interaction with the current " &
+    "screen. Do not mention JSON, layouts, renderers, tabs, transcript, debug, " &
+    "or implementation details."
 
-  UiBasePrompt* = "You are the UI designer for a Nim desktop app. " &
-    "Return only one valid UiDoc JSON object. Build a deterministic screen from " &
-    "the latest assistant response.\n\n" &
-    "Workflow rules:\n" &
-    "- Always read the latest assistant message first.\n" &
-    "- If it says 'Next action: choose one' or shows an Options list, render a " &
-    "radio area and a buttons area with one submit button.\n" &
-    "- If it says 'Next action: type' or asks for free-form input, render one " &
-    "textInput area with a clear submitLabel.\n" &
-    "- If it says 'Next action: none', render text, code, or math only.\n" &
-    "- Use one primary content area plus one interaction area when possible.\n" &
-    "- Keep labels short. Avoid side-by-side panels unless comparing items.\n" &
-    "- Never use transcript/debug as normal workflow screens.\n\n" &
+  UiBasePrompt* = "You are the UI Agent for a Nim desktop app. " &
+    "Your only job is to convert the latest Chat Agent response into one " &
+    "valid UiDoc JSON object.\n\n" &
+    "Execution path:\n" &
+    "1. Read the latest assistant message, then ignore older messages except " &
+    "for brief context.\n" &
+    "2. Map structure to explicit components: heading or title -> text area; " &
+    "body paragraphs -> text area; fenced code -> code area with language; " &
+    "choice prompt and Options -> radio area plus buttons area; free-form " &
+    "prompt -> textInput area; math-heavy content -> math area.\n" &
+    "3. If 'Next action: choose one' appears, render choices and one Submit " &
+    "button. If 'Next action: type' appears, render one textInput with a " &
+    "clear submitLabel. If 'Next action: none' appears, render only content " &
+    "areas.\n" &
+    "4. Choose a compact layout that fits the available adaptive surface. " &
+    "Prefer one vertical flow. Use side-by-side areas only for comparison.\n\n" &
     "Contract:\n" &
     "- Return JSON only. version must be 1.\n" &
+    "- Do not ask the renderer to interpret markdown. Strip heading markers " &
+    "from text areas and put code blocks in code areas.\n" &
     "- layout must be a uirelays markdown table and every area name must exist " &
     "in layout.\n" &
     "- Supported kinds: text, code, radio, buttons, textInput, math, transcript.\n" &
-    "- radio/buttons require id and non-empty options. textInput requires id."
+    "- radio/buttons require id and non-empty options. textInput requires id.\n" &
+    "- Keep component ids stable, lowercase, and specific to the current step.\n" &
+    "- Never use transcript or debug as normal workflow screens."
 
   MaxRetries = 3
 
@@ -300,6 +307,7 @@ proc submitChat*(state: var AgentState; userText: string): string =
   state.attempt = 1
   state.pendingChatMessages = messages
   state.pendingUserText = text
+  stderr.writeLine fmt"[AGENT] submitChat: requestId={state.activeRequestId} model={state.cfg.chatModel} text={text[0..min(60,text.len-1)]}"
   result = ""
 
 proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
@@ -307,16 +315,20 @@ proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
     return "agent is closed"
   let busy = state.busyError()
   if busy.len > 0:
+    stderr.writeLine fmt"[AGENT] enqueueUi blocked: {busy} phase={state.phase}"
     return busy
   try:
     state.activeRequestId = state.enqueue(state.buildUiMessages(currentDoc),
       state.cfg.uiModel, 1200, uiDocFmt)
   except IOError:
+    let err = getCurrentExceptionMsg()
+    stderr.writeLine fmt"[AGENT] enqueueUi IOError: {err}"
     state.resetPending()
-    return getCurrentExceptionMsg()
+    return err
   state.phase = apWaitingUi
   state.attempt = 1
   state.pendingDoc = currentDoc
+  stderr.writeLine fmt"[AGENT] enqueueUi: requestId={state.activeRequestId} model={state.cfg.uiModel}"
   result = ""
 
 proc extractText(item: RequestResult): string =
@@ -371,6 +383,7 @@ proc pollActiveResult(state: var AgentState; item: var RequestResult): bool =
   result = false
 
 proc finishChat(state: var AgentState; text: string; outResult: var AgentResult) =
+  stderr.writeLine fmt"[AGENT] finishChat: len={text.len} preview={text[0..min(120,text.len-1)]}"
   state.chatMessages = state.pendingChatMessages
   state.chatMessages.add assistantMessageText(text)
   state.chatHistory.add ChatEntry(role: arUser, content: state.pendingUserText)
@@ -379,12 +392,16 @@ proc finishChat(state: var AgentState; text: string; outResult: var AgentResult)
   outResult = AgentResult(kind: resChatText, text: text)
 
 proc finishUi(state: var AgentState; text: string; outResult: var AgentResult) =
+  stderr.writeLine fmt"[AGENT] finishUi: raw response len={text.len}"
+  stderr.writeLine fmt"[AGENT] finishUi: raw={text[0..min(300,text.len-1)]}"
   var doc: UiDoc
   var parseErr = ""
   state.resetPending()
   if parseUiDoc(text, doc, parseErr):
+    stderr.writeLine fmt"[AGENT] finishUi: parseUiDoc OK title={doc.title} areas={doc.areas.len} layout={doc.layout[0..min(80,doc.layout.len-1)]}"
     outResult = AgentResult(kind: resUiDoc, text: text, doc: doc)
   else:
+    stderr.writeLine fmt"[AGENT] finishUi: parseUiDoc FAILED err={parseErr}"
     outResult = AgentResult(kind: resError,
       error: "invalid UI document: " & parseErr, text: text)
 
@@ -403,11 +420,13 @@ proc poll*(state: var AgentState; outResult: var AgentResult): bool =
   if not state.pollActiveResult(item):
     return false
 
+  stderr.writeLine fmt"[AGENT] poll: got result for requestId={item.response.request.requestId} phase={state.phase} httpCode={item.response.code} transportErr={item.error.kind}"
   try:
     let text = extractText(item)
     state.finishSuccess(text, outResult)
   except CatchableError:
     let err = getCurrentExceptionMsg()
+    stderr.writeLine fmt"[AGENT] poll: extractText failed: {err}"
     let attemptBefore = state.attempt
     try:
       if isRetriable(item) and state.retryCurrent():
