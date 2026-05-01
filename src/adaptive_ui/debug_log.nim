@@ -6,7 +6,7 @@ type
     maxEntries*: int
 
 proc initDebugLog*(maxEntries = 20): DebugLog =
-  DebugLog(maxEntries: maxEntries)
+  DebugLog(maxEntries: max(1, maxEntries))
 
 proc addDebug*(log: var DebugLog; text: string) =
   if text.len == 0:

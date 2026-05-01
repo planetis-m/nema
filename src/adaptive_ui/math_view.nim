@@ -23,13 +23,15 @@ proc rewriteFrac(text: string): string =
   var i = 0
   while i < text.len:
     if text.continuesWith("\\frac", i):
+      let start = i
       i += "\\frac".len
-      var num = readGroup(text, i)
-      var den = readGroup(text, i)
+      let num = readGroup(text, i)
+      let den = readGroup(text, i)
       if num.len > 0 and den.len > 0:
         result.add "(" & num & ")/(" & den & ")"
       else:
-        result.add "\\frac"
+        result.add text[start]
+        i = start + 1
     else:
       result.add text[i]
       inc i

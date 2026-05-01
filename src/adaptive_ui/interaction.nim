@@ -8,6 +8,12 @@ proc findArea*(doc: UiDoc; name: string; area: var UiArea): bool =
       return true
   result = false
 
+proc areaByName(doc: UiDoc; name: string): UiArea =
+  for area in doc.areas:
+    if area.name == name:
+      return area
+  raise newException(ValueError, "unknown UI area: " & name)
+
 proc optionLabel*(area: UiArea; optionId: string): string =
   for option in area.options:
     if option.id == optionId:
@@ -49,21 +55,15 @@ proc uiEventText*(doc: UiDoc; rt: UiRuntime; ev: UiEvent): string =
   of ueNone:
     result = ""
   of ueSelect:
-    var area: UiArea
+    let area = doc.areaByName(ev.area)
     result = "Selected option for " & ev.id & ": "
-    if doc.findArea(ev.area, area):
-      result.add area.valueText(ev.value)
-    else:
-      result.add ev.value
+    result.add area.valueText(ev.value)
   of ueSubmitText:
     result = "Submitted text for " & ev.id & ":\n" & ev.value
   of ueClick:
-    var area: UiArea
+    let area = doc.areaByName(ev.area)
     result = "Clicked button "
-    if doc.findArea(ev.area, area):
-      result.add area.valueText(ev.id)
-    else:
-      result.add ev.id
+    result.add area.valueText(ev.id)
     result.add " in area "
     result.add ev.area
     result.add "."

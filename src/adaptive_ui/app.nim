@@ -141,8 +141,6 @@ proc pollAgent(state: var AppState) =
       state.status = res.error
       if res.text.len > 0:
         state.debugLog.addDebug(res.text)
-      if state.doc.areas.len == 0:
-        state.doc = textUiDoc("Agent Error", res.error)
     of resChatText:
       let err = state.agent.enqueueUi(state.doc)
       if err.len > 0:
@@ -159,12 +157,12 @@ proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
   discard drawText(font, r.x + 8, r.y + 5, text, theme.fg[TokenClass.Text], bg)
 
 proc readAppConfig(path: string; status: var string): AppConfig =
-  var err = ""
-  if loadConfig(path, result, err):
+  try:
+    result = loadConfig(path)
     if not fileExists(path):
       status = "Using default config"
-  else:
-    quit "Config error in " & path & ": " & err, 1
+  except CatchableError as e:
+    quit "Config error in " & path & ": " & e.msg, 1
 
 proc runApp*(configPath = "adaptive_app.json";
     title = DefaultWindowTitle; width = DefaultWindowWidth;

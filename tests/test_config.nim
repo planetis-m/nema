@@ -5,28 +5,24 @@ import adaptive_ui/config
 block defaults:
   let cfg = initAppConfig()
   doAssert cfg.apiUrl == "https://api.openai.com/v1/chat/completions"
+  doAssert cfg.chatModel == "gpt-4.1-mini"
+  doAssert cfg.uiModel == "gpt-4.1-mini"
   doAssert cfg.timeoutMs == 30000
 
-block roundtrip:
-  let cfg = AppConfig(
-    apiUrl: "http://localhost:8080/v1",
-    apiKey: "",
-    chatModel: "chat-model",
-    uiModel: "ui-model",
-    timeoutMs: 9000
-  )
-  let text = toJson(cfg)
-  doAssert "\"chatModel\":\"chat-model\"" in text
+block parsePartialKeepsDefaults:
+  let cfg = parseConfig("""{"chatModel":"custom-chat"}""")
+  doAssert cfg.apiUrl == "https://api.openai.com/v1/chat/completions"
+  doAssert cfg.chatModel == "custom-chat"
+  doAssert cfg.uiModel == "gpt-4.1-mini"
 
-  var parsed: AppConfig
-  var err = ""
-  doAssert parseConfig(text, parsed, err), err
-  doAssert parsed.chatModel == "chat-model"
+block parseFileKeyOverridesDefault:
+  let cfg = parseConfig("""{"apiKey":"file-key"}""")
+  doAssert cfg.apiKey == "file-key"
 
 block loadMissingUsesDefaults:
-  var cfg: AppConfig
-  var err = ""
-  doAssert loadConfig("/tmp/adaptive-ui-missing-config.json", cfg, err), err
+  let cfg = loadConfig("/tmp/adaptive-ui-missing-config.json")
+  doAssert cfg.apiUrl == "https://api.openai.com/v1/chat/completions"
+  doAssert cfg.chatModel == "gpt-4.1-mini"
 
 block saveAndLoad:
   let path = getTempDir() / "adaptive-ui-config-test.json"
@@ -38,24 +34,27 @@ block saveAndLoad:
     timeoutMs: 1000
   )
 
-  var err = ""
-  doAssert saveConfig(path, cfg, err), err
+  saveConfig(path, cfg)
 
   let saved = readFile(path)
   doAssert "sk-secret" notin saved
 
-  var loaded: AppConfig
-  doAssert loadConfig(path, loaded, err), err
+  let loaded = loadConfig(path)
   doAssert loaded.apiUrl == cfg.apiUrl
+  doAssert loaded.chatModel == cfg.chatModel
+  doAssert loaded.timeoutMs == cfg.timeoutMs
+  doAssert loaded.apiKey.len == 0
 
   if fileExists(path):
     removeFile(path)
 
-block invalidJson:
-  var cfg: AppConfig
-  var err = ""
-  doAssert not parseConfig("""{"apiUrl":""", cfg, err)
-  doAssert err.len > 0
+block invalidJsonRaises:
+  var raised = false
+  try:
+    discard parseConfig("""{"apiUrl":""")
+  except CatchableError:
+    raised = true
+  doAssert raised
 
 block jsonxShape:
   let cfg = initAppConfig()

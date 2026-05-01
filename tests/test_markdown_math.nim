@@ -27,6 +27,7 @@ block mathDelimiters:
 
 block mathFrac:
   doAssert formatMathLine("\\frac{a+b}{c}") == "(a+b)/(c)"
+  doAssert formatMathLine("\\frac{a+b}") == "\\frac{a+b}"
 
 block languageMapping:
   doAssert sourceLanguageFor("nim") == langNim

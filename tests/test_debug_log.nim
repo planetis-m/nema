@@ -25,6 +25,13 @@ block defaultLimit:
   doAssert log.maxEntries == 20
   doAssert log.entries == @["entry"]
 
+block minimumLimit:
+  var log = initDebugLog(maxEntries = 0)
+  log.addDebug("first")
+  log.addDebug("second")
+  doAssert log.maxEntries == 1
+  doAssert log.entries == @["second"]
+
 block uiDoc:
   var log = initDebugLog()
   doAssert log.debugUiDoc().areas[0].text == "No debug entries."
