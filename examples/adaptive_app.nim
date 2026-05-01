@@ -1,4 +1,4 @@
-import adaptive_ui
+import adaptive_ui/app
 
 when isMainModule:
-  runAdaptiveApp()
+  runApp()
