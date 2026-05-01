@@ -1,5 +1,6 @@
-import std/strutils
+import std/[strutils, tables]
 import jsonx
+import uirelays/layout
 import ./ui_doc
 
 proc fail(err: var string; message: string): bool =
@@ -31,6 +32,20 @@ proc validateArea(area: UiArea; index: int; err: var string): bool =
 
   result = true
 
+proc validateLayoutAreas(doc: UiDoc; err: var string): bool =
+  try:
+    let layout = parseLayout(doc.layout)
+    let cells = layout.resolve(1000, 1000, lineHeight = 20)
+    if cells.len == 0:
+      return fail(err, "layout has no cells")
+
+    for area in doc.areas:
+      if not cells.hasKey(area.name):
+        return fail(err, "area " & area.name & " is not in layout")
+    result = true
+  except CatchableError:
+    result = fail(err, "layout parse error: " & getCurrentExceptionMsg())
+
 proc validateUiDoc(doc: UiDoc; err: var string): bool =
   if doc.version != 1:
     return fail(err, "unsupported UI document version " & $doc.version)
@@ -43,7 +58,7 @@ proc validateUiDoc(doc: UiDoc; err: var string): bool =
     if not validateArea(area, i, err):
       return false
 
-  result = true
+  result = validateLayoutAreas(doc, err)
 
 proc parseUiDoc*(text: string; doc: var UiDoc; err: var string): bool =
   err = ""

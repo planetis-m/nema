@@ -93,6 +93,26 @@ block:
   doAssert err.len > 0
 
 block:
+  let json = """{"version":1,"layout":"not a layout","areas":[{"name":"main","kind":"text"}]}"""
+  var doc: UiDoc
+  var err = ""
+  doAssert not parses(json, doc, err)
+  doAssert "layout" in err
+
+block:
+  let json = """{"version":1,"layout":"| main, * |","areas":[{"name":"other","kind":"text"}]}"""
+  var doc: UiDoc
+  var err = ""
+  doAssert not parses(json, doc, err)
+  doAssert "not in layout" in err
+
+block:
+  let json = """{"version":1,"layout":"| main, *; detail, 2 lines |","areas":[{"name":"detail","kind":"text"}]}"""
+  var doc: UiDoc
+  var err = ""
+  doAssert parses(json, doc, err), err
+
+block:
   let doc = fallbackUiDoc("The generated UI could not be rendered.")
   doAssert doc.version == 1
   doAssert doc.layout == FallbackLayout
