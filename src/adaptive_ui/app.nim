@@ -6,8 +6,8 @@ import uirelays/layout
 import widgets/synedit
 import widgets/theme
 import ./[
-  agent, components, config, interaction, learning, skill_files, ui_doc,
-  transcript, ui_render
+  agent, components, config, interaction, learning, live_flow, skill_files,
+  ui_doc, transcript, ui_render
 ]
 
 const
@@ -23,7 +23,9 @@ const
 type
   AppMode* = enum
     appLocalDemo,
-    appLiveChat
+    appLiveChat,
+    appLiveQuiz,
+    appLiveEssay
 
   AppFocus = enum
     afAdaptive,
@@ -102,7 +104,7 @@ proc initAppState(width, height: int; font: Font; theme: Theme; mode: AppMode;
   )
   result.status = status
   result.theme = theme
-  if mode == appLiveChat:
+  if mode != appLocalDemo:
     result.agent = initAgentRuntime(cfg, skills)
     result.agentReady = true
     if result.status.len == 0:
@@ -125,8 +127,29 @@ proc currentDoc(state: AppState): UiDoc =
   case state.mode
   of appLocalDemo:
     state.learning.doc
-  of appLiveChat:
+  of appLiveChat, appLiveQuiz, appLiveEssay:
     state.liveDoc
+
+proc isLiveMode(mode: AppMode): bool =
+  mode in {appLiveChat, appLiveQuiz, appLiveEssay}
+
+proc flowKind(mode: AppMode): LiveFlowKind =
+  case mode
+  of appLocalDemo, appLiveChat:
+    lfChat
+  of appLiveQuiz:
+    lfQuiz
+  of appLiveEssay:
+    lfEssay
+
+proc appMode(kind: LiveFlowKind): AppMode =
+  case kind
+  of lfChat:
+    appLiveChat
+  of lfQuiz:
+    appLiveQuiz
+  of lfEssay:
+    appLiveEssay
 
 proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
   result = e
@@ -147,11 +170,19 @@ proc submitLiveText(state: var AppState; text: string) =
     return
 
   var err = ""
-  if state.agent.submitUserText(text, err):
+  let prompt = flowPrompt(state.mode.flowKind(), text)
+  if state.agent.submitUserText(prompt, err, text):
     state.status = state.agent.lastStatus
     state.liveDoc = transcriptUiDoc(state.agent.history, "Waiting")
   else:
     state.status = err
+
+proc switchLiveFlow(state: var AppState; kind: LiveFlowKind; text: string) =
+  state.mode = appMode(kind)
+  state.status = flowTitle(kind) & " mode"
+  state.liveDoc = flowIntroDoc(kind)
+  if text.strip().len > 0:
+    state.submitLiveText(text)
 
 proc handleSubmittedInput(state: var AppState; text: string) =
   if text.strip().len == 0:
@@ -160,8 +191,13 @@ proc handleSubmittedInput(state: var AppState; text: string) =
   case state.mode
   of appLocalDemo:
     state.learning.status = "Input captured: " & $text.len & " characters"
-  of appLiveChat:
-    state.submitLiveText(text)
+  of appLiveChat, appLiveQuiz, appLiveEssay:
+    let cmd = parseLiveCommand(text)
+    case cmd.kind
+    of lcNone:
+      state.submitLiveText(cmd.text)
+    of lcChat, lcQuiz, lcEssay:
+      state.switchLiveFlow(flowForCommand(cmd.kind), cmd.text)
 
 proc handleLiveUiEvent(state: var AppState; ev: UiEvent) =
   case ev.kind
@@ -176,11 +212,11 @@ proc handleAdaptiveEvent(state: var AppState; ev: UiEvent) =
   case state.mode
   of appLocalDemo:
     state.learning.handleLearningEvent(state.rt, ev)
-  of appLiveChat:
+  of appLiveChat, appLiveQuiz, appLiveEssay:
     state.handleLiveUiEvent(ev)
 
 proc pollLiveAgent(state: var AppState) =
-  if state.mode != appLiveChat or not state.agentReady:
+  if not state.mode.isLiveMode() or not state.agentReady:
     return
 
   var item: AgentResult
@@ -195,7 +231,8 @@ proc pollLiveAgent(state: var AppState) =
     of agChatText:
       state.liveDoc = transcriptUiDoc(state.agent.history)
       var err = ""
-      if state.agent.enqueueUiDoc(state.liveDoc, err):
+      if state.agent.enqueueUiDoc(
+          state.liveDoc, err, uiFlowHint(state.mode.flowKind())):
         state.status = state.agent.lastStatus
       else:
         state.status = err

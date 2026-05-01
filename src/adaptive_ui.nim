@@ -4,6 +4,7 @@ import adaptive_ui/components
 import adaptive_ui/config
 import adaptive_ui/interaction
 import adaptive_ui/learning
+import adaptive_ui/live_flow
 import adaptive_ui/markdown_view
 import adaptive_ui/math_view
 import adaptive_ui/skill_files
@@ -18,6 +19,7 @@ export components
 export config
 export interaction
 export learning
+export live_flow
 export markdown_view
 export math_view
 export skill_files

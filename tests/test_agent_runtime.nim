@@ -27,8 +27,10 @@ block promptBuilders:
   let prompt = buildUiPrompt(@[
     AgentMessage(role: amUser, content: "Quiz me"),
     AgentMessage(role: amAssistant, content: "Question: 2 + 2?")
-  ], textUiDoc("Current", "Old screen"), skills)
+  ], textUiDoc("Current", "Old screen"), skills, "Current flow: quiz.")
   doAssert "Conversation so far" in prompt
+  doAssert "UI context" in prompt
+  doAssert "Current flow: quiz." in prompt
   doAssert "math-tutor" in prompt
   doAssert "\"version\":1" in prompt
   doAssert "Return the next UiDoc JSON only." in prompt
@@ -58,3 +60,12 @@ block emptyInput:
   var err = ""
   doAssert not rt.submitUserText("   ", err)
   doAssert "empty" in err
+
+block displayTextDoesNotBypassMissingKey:
+  var rt = initAgentRuntime(cfg, skills, "UI prompt")
+  defer: rt.close()
+
+  var err = ""
+  doAssert not rt.submitUserText("internal prompt", err, "shown text")
+  doAssert "API key missing" in err
+  doAssert rt.history.len == 0

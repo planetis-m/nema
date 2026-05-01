@@ -227,7 +227,7 @@ proc buildChatMessages*(history: openArray[AgentMessage]; skills: SkillLibrary;
   result.add userMessageText(userText)
 
 proc buildUiPrompt*(history: openArray[AgentMessage]; currentDoc: UiDoc;
-    skills: SkillLibrary): string =
+    skills: SkillLibrary; uiHint = ""): string =
   result = "Conversation so far:\n"
   if history.len == 0:
     result.add "(empty)\n"
@@ -238,6 +238,11 @@ proc buildUiPrompt*(history: openArray[AgentMessage]; currentDoc: UiDoc;
       result.add ": "
       result.add msg.content
       result.add "\n"
+
+  if uiHint.strip().len > 0:
+    result.add "\nUI context:\n"
+    result.add uiHint.strip()
+    result.add "\n"
 
   let summary = skills.skillSummary()
   if summary.len > 0:
@@ -288,13 +293,17 @@ proc enqueue(rt: var AgentRuntime; kind: AgentRequestKind;
   rt.client.startRequests(batch)
   rt.pending[result] = kind
 
-proc submitUserText*(rt: var AgentRuntime; text: string;
-    err: var string): bool =
+proc submitUserText*(rt: var AgentRuntime; text: string; err: var string;
+    displayText = ""): bool =
   let userText = text.strip()
   if userText.len == 0:
     return fail(err, "input is empty")
   if not rt.ensureCanRequest(err):
     return false
+
+  let historyText =
+    if displayText.strip().len > 0: displayText.strip()
+    else: userText
 
   let requestId = rt.enqueue(
     kind = arChat,
@@ -303,13 +312,13 @@ proc submitUserText*(rt: var AgentRuntime; text: string;
     maxTokens = 800,
     responseFormat = formatText
   )
-  rt.history.add AgentMessage(role: amUser, content: userText)
+  rt.history.add AgentMessage(role: amUser, content: historyText)
   rt.lastStatus = "queued chat request " & $requestId
   err = ""
   result = true
 
 proc enqueueUiDoc*(rt: var AgentRuntime; currentDoc: UiDoc;
-    err: var string): bool =
+    err: var string; uiHint = ""): bool =
   if not rt.ensureCanRequest(err):
     return false
 
@@ -317,7 +326,7 @@ proc enqueueUiDoc*(rt: var AgentRuntime; currentDoc: UiDoc;
     kind = arUi,
     messages = @[
       systemMessageText(rt.uiSystemPrompt),
-      userMessageText(buildUiPrompt(rt.history, currentDoc, rt.skills))
+      userMessageText(buildUiPrompt(rt.history, currentDoc, rt.skills, uiHint))
     ],
     model = rt.cfg.uiModel,
     maxTokens = 1200,

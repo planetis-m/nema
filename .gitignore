@@ -14,3 +14,4 @@ tests/test_agent_runtime
 tests/test_interaction
 tests/test_markdown_math
 tests/test_transcript
+tests/test_live_flow
