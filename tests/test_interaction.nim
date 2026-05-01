@@ -33,6 +33,8 @@ block findArea:
   var area: UiArea
   doAssert doc.findArea("choices", area)
   doAssert area.id == "q1"
+  doAssert area.optionLabel("b") == "B"
+  doAssert area.optionLabel("missing") == ""
   doAssert not doc.findArea("missing", area)
 
 block valuesText:
@@ -41,7 +43,7 @@ block valuesText:
   rt.setText(doc.areas[1], "Essay answer")
 
   let values = uiValuesText(doc, rt)
-  doAssert "- q1: b" in values
+  doAssert "- q1: b (B)" in values
   doAssert "- essay: Essay answer" in values
 
 block eventText:
@@ -50,9 +52,12 @@ block eventText:
 
   let click = UiEvent(kind: ueClick, area: "actions", id: "submit")
   let text = uiEventText(doc, rt, click)
-  doAssert text.startsWith("Clicked button submit")
+  doAssert text.startsWith("Clicked button submit (Submit)")
   doAssert "Current UI values" in text
-  doAssert "- q1: a" in text
+  doAssert "- q1: a (A)" in text
+
+  let selected = UiEvent(kind: ueSelect, area: "choices", id: "q1", value: "b")
+  doAssert uiEventText(doc, rt, selected) == "Selected option for q1: b (B)"
 
   let submit = UiEvent(kind: ueSubmitText, area: "answer", id: "essay",
     value: "A long answer")

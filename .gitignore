@@ -1,4 +1,5 @@
 .codex
+adaptive_ui.json
 deps/*
 src/adaptive_ui.out
 examples/min_window

@@ -8,6 +8,20 @@ proc findArea*(doc: UiDoc; name: string; area: var UiArea): bool =
       return true
   result = false
 
+proc optionLabel*(area: UiArea; optionId: string): string =
+  for option in area.options:
+    if option.id == optionId:
+      return option.label
+  result = ""
+
+proc valueText(area: UiArea; value: string): string =
+  result = value
+  let label = area.optionLabel(value)
+  if label.strip().len > 0:
+    result.add " ("
+    result.add label
+    result.add ")"
+
 proc uiValuesText*(doc: UiDoc; rt: UiRuntime): string =
   for area in doc.areas:
     var value = ""
@@ -28,18 +42,31 @@ proc uiValuesText*(doc: UiDoc; rt: UiRuntime): string =
       else:
         result.add area.name
       result.add ": "
-      result.add value
+      result.add area.valueText(value)
 
 proc uiEventText*(doc: UiDoc; rt: UiRuntime; ev: UiEvent): string =
   case ev.kind
   of ueNone:
     result = ""
   of ueSelect:
-    result = "Selected option for " & ev.id & ": " & ev.value
+    var area: UiArea
+    result = "Selected option for " & ev.id & ": "
+    if doc.findArea(ev.area, area):
+      result.add area.valueText(ev.value)
+    else:
+      result.add ev.value
   of ueSubmitText:
     result = "Submitted text for " & ev.id & ":\n" & ev.value
   of ueClick:
-    result = "Clicked button " & ev.id & " in area " & ev.area & "."
+    var area: UiArea
+    result = "Clicked button "
+    if doc.findArea(ev.area, area):
+      result.add area.valueText(ev.id)
+    else:
+      result.add ev.id
+    result.add " in area "
+    result.add ev.area
+    result.add "."
     let values = uiValuesText(doc, rt)
     if values.len > 0:
       result.add "\nCurrent UI values:\n"

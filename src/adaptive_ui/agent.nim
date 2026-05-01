@@ -7,6 +7,17 @@ import ./[config, skill_files, ui_doc, ui_parse]
 {.passL: "-lcurl".}
 
 const
+  UiContractPrompt = """
+UiDoc contract:
+- Return JSON only.
+- version must be 1.
+- layout must be a uirelays markdown table.
+- Every area name must exist in layout.
+- Supported kinds: text, code, radio, buttons, textInput, math, transcript.
+- radio/buttons require id and non-empty options.
+- textInput requires id and may use placeholder and submitLabel.
+"""
+
   DefaultUiSystemPrompt = """
 You are the UI subagent for a Nim desktop app. Return only one valid UiDoc JSON
 object. Use only supported area kinds and keep the layout compact.
@@ -59,6 +70,11 @@ type
     `type`: string
     description: string
 
+  SchemaEnumProp = object
+    `type`: string
+    description: string
+    `enum`: seq[string]
+
   UiOptionSchema = object
     `type`: string
     properties: tuple[
@@ -78,7 +94,7 @@ type
     `type`: string
     properties: tuple[
       name: SchemaProp,
-      kind: SchemaProp,
+      kind: SchemaEnumProp,
       text: SchemaProp,
       id: SchemaProp,
       options: UiOptionArraySchema,
@@ -109,6 +125,14 @@ type
 proc schemaProp(kind, description: string): SchemaProp =
   SchemaProp(`type`: kind, description: description)
 
+proc schemaEnumProp(kind, description: string;
+    values: openArray[string]): SchemaEnumProp =
+  SchemaEnumProp(
+    `type`: kind,
+    description: description,
+    `enum`: @values
+  )
+
 proc uiOptionSchema(): UiOptionSchema =
   UiOptionSchema(
     `type`: "object",
@@ -126,7 +150,15 @@ proc uiAreaSchema(): UiAreaSchema =
     `type`: "object",
     properties: (
       name: schemaProp("string", "Layout cell name."),
-      kind: schemaProp("string", "One supported UiKind string."),
+      kind: schemaEnumProp("string", "One supported UiKind string.", [
+        "text",
+        "code",
+        "radio",
+        "buttons",
+        "textInput",
+        "math",
+        "transcript"
+      ]),
       text: schemaProp("string", "Markdown-like text content."),
       id: schemaProp("string", "Stable component id for interactive areas."),
       options: UiOptionArraySchema(
@@ -228,7 +260,8 @@ proc buildChatMessages*(history: openArray[AgentMessage]; skills: SkillLibrary;
 
 proc buildUiPrompt*(history: openArray[AgentMessage]; currentDoc: UiDoc;
     skills: SkillLibrary; uiHint = ""): string =
-  result = "Conversation so far:\n"
+  result = UiContractPrompt.strip()
+  result.add "\n\nConversation so far:\n"
   if history.len == 0:
     result.add "(empty)\n"
   else:

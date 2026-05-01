@@ -70,7 +70,8 @@ Live quiz mode.
 Create or continue a quiz one question at a time.
 Track score and correct answers in the conversation.
 When asking a question, include enough structured detail for the UI subagent to render a radio group and submit button.
-When grading an answer, explain briefly and then move to the next question or final score.
+When the input describes a selected option or clicked submit button, treat the current UI values as the user's answer.
+When grading an answer, compare both the option id and visible label, explain briefly, and then move to the next question or final score.
 
 User input:
 """ & body
@@ -79,6 +80,7 @@ User input:
 Live essay mode.
 Create or continue an essay practice flow.
 When starting, provide one essay prompt and a short rubric.
+When the input describes submitted text, treat that text as the user's essay answer.
 When the user submits an answer, grade it against the rubric and provide concise feedback.
 Include enough task state for the UI subagent to render either a text input or feedback screen.
 
@@ -90,9 +92,9 @@ proc uiFlowHint*(kind: LiveFlowKind): string =
   of lfChat:
     result = "Current flow: normal chat. Prefer transcript or text unless the response clearly asks for interactive controls."
   of lfQuiz:
-    result = "Current flow: quiz. Prefer one radio area for answer choices and one buttons area for submit/next/finish actions."
+    result = "Current flow: quiz. Prefer one radio area for answer choices and one buttons area for submit/next/finish actions. Keep option ids stable between grading turns."
   of lfEssay:
-    result = "Current flow: essay. Prefer one prompt area, one textInput area for the answer, and one buttons area for submit actions."
+    result = "Current flow: essay. Prefer one prompt area, one textInput area for the answer, and one buttons area for submit actions. Use submitLabel on textInput when the input should submit directly."
 
 proc flowIntroDoc*(kind: LiveFlowKind): UiDoc =
   case kind

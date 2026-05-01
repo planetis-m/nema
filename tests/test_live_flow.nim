@@ -20,13 +20,18 @@ block flowMapping:
 block prompts:
   doAssert flowPrompt(lfChat, "hello") == "hello"
   doAssert "one question at a time" in flowPrompt(lfQuiz, "nim")
+  doAssert "current UI values as the user's answer" in flowPrompt(lfQuiz, "Selected option")
+  doAssert "option id and visible label" in flowPrompt(lfQuiz, "Selected option")
   doAssert "User input:\nnim" in flowPrompt(lfQuiz, "nim")
+  doAssert "submitted text" in flowPrompt(lfEssay, "essay answer")
   doAssert "rubric" in flowPrompt(lfEssay, "history")
 
 block uiHints:
   doAssert "normal chat" in uiFlowHint(lfChat)
   doAssert "radio area" in uiFlowHint(lfQuiz)
+  doAssert "stable" in uiFlowHint(lfQuiz)
   doAssert "textInput" in uiFlowHint(lfEssay)
+  doAssert "submitLabel" in uiFlowHint(lfEssay)
 
 block introDocs:
   let doc = flowIntroDoc(lfEssay)

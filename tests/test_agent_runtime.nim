@@ -28,6 +28,8 @@ block promptBuilders:
     AgentMessage(role: amUser, content: "Quiz me"),
     AgentMessage(role: amAssistant, content: "Question: 2 + 2?")
   ], textUiDoc("Current", "Old screen"), skills, "Current flow: quiz.")
+  doAssert prompt.startsWith("UiDoc contract:")
+  doAssert "Supported kinds: text, code, radio, buttons, textInput, math, transcript." in prompt
   doAssert "Conversation so far" in prompt
   doAssert "UI context" in prompt
   doAssert "Current flow: quiz." in prompt
@@ -40,6 +42,7 @@ block responseFormat:
   doAssert "\"type\":\"json_schema\"" in text
   doAssert "\"name\":\"ui_doc\"" in text
   doAssert "\"strict\":true" in text
+  doAssert "\"enum\":[\"text\",\"code\",\"radio\",\"buttons\",\"textInput\",\"math\",\"transcript\"]" in text
 
 block errorResultCarriesText:
   let item = AgentResult(
