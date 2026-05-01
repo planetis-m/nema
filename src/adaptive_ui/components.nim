@@ -5,9 +5,7 @@ import ./ui_doc
 type
   ComponentState* = object
     selectedOption*: string
-    textBufferId*: string
     text*: string
-    focused*: bool
     hasEditor*: bool
     editor*: SynEdit
     lastText*: string
@@ -17,7 +15,6 @@ type
   UiRuntime* = object
     components*: Table[string, ComponentState]
     focus*: string
-    status*: string
 
 proc initUiRuntime*(): UiRuntime =
   UiRuntime(components: initTable[string, ComponentState]())
@@ -31,7 +28,7 @@ proc componentKey*(area: UiArea): string =
 proc ensureState(rt: var UiRuntime; area: UiArea): string =
   let key = componentKey(area)
   if not rt.components.hasKey(key):
-    rt.components[key] = ComponentState(textBufferId: key)
+    rt.components[key] = ComponentState()
   result = key
 
 proc selectedOption*(rt: UiRuntime; area: UiArea): string =
@@ -62,17 +59,7 @@ proc textValue*(rt: UiRuntime; area: UiArea): string =
     result = ""
 
 proc setFocus*(rt: var UiRuntime; areaName: string) =
-  if rt.focus == areaName:
-    return
-
-  if rt.focus.len > 0 and rt.components.hasKey(rt.focus):
-    rt.components[rt.focus].focused = false
-
   rt.focus = areaName
-  if areaName.len > 0:
-    if not rt.components.hasKey(areaName):
-      rt.components[areaName] = ComponentState(textBufferId: areaName)
-    rt.components[areaName].focused = true
 
 proc eventForSelect*(area: UiArea; optionId: string): UiEvent =
   UiEvent(

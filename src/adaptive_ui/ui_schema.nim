@@ -89,7 +89,7 @@ let uiDocFmt* = formatJsonSchema("ui_doc", UiDocSchema(
                 label: SchemaProp(`type`: "string", description: "Visible option label."),
                 selected: SchemaProp(`type`: "boolean", description: "Whether this option is selected.")
               ),
-              required: @["id", "label"],
+              required: @["id", "label", "selected"],
               additionalProperties: false
             )
           ),
@@ -97,11 +97,14 @@ let uiDocFmt* = formatJsonSchema("ui_doc", UiDocSchema(
           placeholder: SchemaProp(`type`: "string", description: "Text input placeholder."),
           submitLabel: SchemaProp(`type`: "string", description: "Text input submit button label.")
         ),
-        required: @["name", "kind"],
+        required: @[
+          "name", "kind", "text", "id", "options", "language",
+          "placeholder", "submitLabel"
+        ],
         additionalProperties: false
       )
     )
   ),
-  required: @["version", "title", "layout", "areas"],
+  required: @["version", "title", "layout", "focus", "areas"],
   additionalProperties: false
 ), strict = true)

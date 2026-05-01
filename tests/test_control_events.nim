@@ -1,4 +1,3 @@
-import std/tables
 import adaptive_ui/[components, ui_doc]
 
 let radio = UiArea(
@@ -21,10 +20,10 @@ let buttons = UiArea(
   ]
 )
 
-let essay = UiArea(
+let answer = UiArea(
   name: "answer",
   kind: ukTextInput,
-  id: "essay_response"
+  id: "open_response"
 )
 
 block:
@@ -47,18 +46,15 @@ block:
 
 block:
   var rt = initUiRuntime()
-  rt.setText(essay, "Nim uses let for immutable bindings.")
-  doAssert rt.textValue(essay) == "Nim uses let for immutable bindings."
+  rt.setText(answer, "Nim uses let for immutable bindings.")
+  doAssert rt.textValue(answer) == "Nim uses let for immutable bindings."
 
 block:
   var rt = initUiRuntime()
   rt.setFocus("choices")
   doAssert rt.focus == "choices"
-  doAssert rt.components["choices"].focused
   rt.setFocus("answer")
   doAssert rt.focus == "answer"
-  doAssert not rt.components["choices"].focused
-  doAssert rt.components["answer"].focused
 
 block:
   let ev = eventForSelect(radio, "a")
@@ -75,8 +71,8 @@ block:
   doAssert ev.value == ""
 
 block:
-  let ev = eventForSubmit(essay, "hello")
+  let ev = eventForSubmit(answer, "hello")
   doAssert ev.kind == ueSubmitText
   doAssert ev.area == "answer"
-  doAssert ev.id == "essay_response"
+  doAssert ev.id == "open_response"
   doAssert ev.value == "hello"

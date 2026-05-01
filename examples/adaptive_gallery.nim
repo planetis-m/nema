@@ -36,9 +36,9 @@ const GalleryDoc = UiDoc(
       kind: ukRadio,
       id: "sample_choice",
       options: @[
-        UiOption(id: "notes", label: "Study notes"),
-        UiOption(id: "quiz", label: "Quiz"),
-        UiOption(id: "essay", label: "Essay")
+        UiOption(id: "summary", label: "Summary"),
+        UiOption(id: "compare", label: "Compare"),
+        UiOption(id: "decide", label: "Decide")
       ]
     ),
     UiArea(

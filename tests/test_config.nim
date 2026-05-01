@@ -6,7 +6,6 @@ block defaults:
   let cfg = initAppConfig()
   doAssert cfg.apiUrl == "https://api.openai.com/v1/chat/completions"
   doAssert cfg.timeoutMs == 30000
-  doAssert cfg.skillRoots.len == 1
 
 block roundtrip:
   let cfg = AppConfig(
@@ -14,8 +13,7 @@ block roundtrip:
     apiKey: "",
     chatModel: "chat-model",
     uiModel: "ui-model",
-    timeoutMs: 9000,
-    skillRoots: @["tests/fixtures/skills"]
+    timeoutMs: 9000
   )
   let text = toJson(cfg)
   doAssert "\"chatModel\":\"chat-model\"" in text
@@ -24,7 +22,6 @@ block roundtrip:
   var err = ""
   doAssert parseConfig(text, parsed, err), err
   doAssert parsed.chatModel == "chat-model"
-  doAssert parsed.skillRoots == @["tests/fixtures/skills"]
 
 block loadMissingUsesDefaults:
   var cfg: AppConfig
@@ -38,8 +35,7 @@ block saveAndLoad:
     apiKey: "sk-secret",
     chatModel: "chat",
     uiModel: "ui",
-    timeoutMs: 1000,
-    skillRoots: @["a", "b"]
+    timeoutMs: 1000
   )
 
   var err = ""
@@ -51,7 +47,6 @@ block saveAndLoad:
   var loaded: AppConfig
   doAssert loadConfig(path, loaded, err), err
   doAssert loaded.apiUrl == cfg.apiUrl
-  doAssert loaded.skillRoots == @["a", "b"]
 
   if fileExists(path):
     removeFile(path)

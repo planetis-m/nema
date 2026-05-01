@@ -18,7 +18,7 @@ let doc = UiDoc(
     UiArea(
       name: "answer",
       kind: ukTextInput,
-      id: "essay"
+      id: "open_response"
     ),
     UiArea(
       name: "actions",
@@ -40,11 +40,11 @@ block findArea:
 block valuesText:
   var rt = initUiRuntime()
   rt.setSelected(doc.areas[0], "b")
-  rt.setText(doc.areas[1], "Essay answer")
+  rt.setText(doc.areas[1], "Open response")
 
   let values = uiValuesText(doc, rt)
   doAssert "- q1: b (B)" in values
-  doAssert "- essay: Essay answer" in values
+  doAssert "- open_response: Open response" in values
 
 block eventText:
   var rt = initUiRuntime()
@@ -59,6 +59,7 @@ block eventText:
   let selected = UiEvent(kind: ueSelect, area: "choices", id: "q1", value: "b")
   doAssert uiEventText(doc, rt, selected) == "Selected option for q1: b (B)"
 
-  let submit = UiEvent(kind: ueSubmitText, area: "answer", id: "essay",
+  let submit = UiEvent(kind: ueSubmitText, area: "answer", id: "open_response",
     value: "A long answer")
-  doAssert uiEventText(doc, rt, submit) == "Submitted text for essay:\nA long answer"
+  doAssert uiEventText(doc, rt, submit) ==
+    "Submitted text for open_response:\nA long answer"

@@ -1,84 +1,59 @@
 # Adaptive UI
 
-Nim-only AI-driven adaptive UI app. A chat agent handles task logic and a UI
-subagent generates interactive surfaces from structured JSON.
+Nim-only AI-driven adaptive UI app. A chat agent handles task state and a UI
+subagent generates interactive surfaces from structured `UiDoc` JSON.
 
 The app has a stable text input at the bottom and an adaptive surface above it.
-The adaptive surface renders `UiDoc` JSON documents containing text, code,
-radio groups, button rows, multiline text inputs, math text, and chat
-transcripts. Quiz and essay flows are built-in modes, not the app's only
-identity.
+The adaptive surface renders generic primitives: text, transcript, code, math,
+radio choices, button rows, and multiline text input.
 
 ## Build
 
-The repo includes `config.nims`, so SDL3 is enabled by default.
-
-Run all tests and example compile checks:
+The main executable is `src/adaptive_ui_app.nim`.
 
 ```sh
-nim c -r tests/tester.nim
+nim c -d:sdl3 src/adaptive_ui_app.nim
+./src/adaptive_ui_app
 ```
 
-## Running
-
-Adaptive app (no API key required to open):
+Run core tests and compile checks:
 
 ```sh
-nim c -r examples/adaptive_app.nim
-./examples/adaptive_app
+nim c -d:sdl3 -r tests/tester.nim
 ```
 
-Without an API key the app shows the adaptive surface intro screen and reports
-that live generation needs configuration.
+## Configuration
 
-With an API key:
+The app reads `adaptive_app.json` from the current working directory. If the file
+is missing, defaults are used.
+
+```json
+{
+  "apiUrl": "https://api.openai.com/v1/chat/completions",
+  "apiKey": "",
+  "chatModel": "gpt-4.1-mini",
+  "uiModel": "gpt-4.1-mini",
+  "timeoutMs": 30000
+}
+```
+
+Set the API key with the environment variable:
 
 ```sh
-cp adaptive_ui.example.json adaptive_ui.json
-export OPENAI_API_KEY=...
-./examples/adaptive_app
+export OPENAI_API_KEY="sk-..."
+./src/adaptive_ui_app
 ```
 
-Input commands:
+To use a different endpoint, edit `apiUrl` in `adaptive_app.json`. Leave
+`apiKey` empty unless you intentionally want the key stored in that local file.
 
-- `/adaptive plan a product launch checklist`
-- `/chat ask a normal question`
-- `/quiz Nim basics`
-- `/essay ownership in Nim`
-- `/debug`
+## Commands
 
-Plain input stays in adaptive task mode. Quiz and essay are explicit shortcuts.
-
-Component gallery:
-
-```sh
-nim c -r examples/adaptive_gallery.nim
-./examples/adaptive_gallery
-```
-
-Scripted quiz demo:
-
-```sh
-nim c -r examples/learning_demo.nim
-./examples/learning_demo
-```
+- `/new [text]`: reset the session and optionally submit text.
+- `/transcript`: show conversation history.
+- `/debug`: show recent failed UI responses.
+- Anything else: submit text to the adaptive session.
 
 ## Design
 
-Read `docs/design-v2.md` for the full specification. It covers the UiDoc
-contract, component rendering, layout strategy, agent roles, data flow, error
-handling, config, and testing.
-
-## Files To Read Before Coding
-
-- `docs/design-v2.md`
-- `docs/dependency-review.md`
-- `AGENTS.md`
-
-## Notes
-
-- Application code is Nim only.
-- Use `uirelays/layout.parseLayout` for generated layouts.
-- Use `SynEdit` for text-like surfaces.
-- Use `jsonx` for config, state, and agent response models.
-- Do not use `std/json` for project data models.
+Read `docs/design-v2.md` for the executable specification.

@@ -6,11 +6,11 @@ block empty:
 
 block format:
   let history = @[
-    ChatEntry(role: arUser, content: " Make a quiz. "),
+    ChatEntry(role: arUser, content: " Make a plan. "),
     ChatEntry(role: arAssistant, content: "Question 1")
   ]
   let text = formatTranscript(history)
-  doAssert text.startsWith("User:\nMake a quiz.")
+  doAssert text.startsWith("User:\nMake a plan.")
   doAssert "\n\nAssistant:\nQuestion 1" in text
 
 block uiDoc:

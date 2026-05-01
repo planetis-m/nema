@@ -1,46 +1,21 @@
-import std/[random, strutils, times]
+import std/[options, strutils]
 import jsonx
 import relay
 import openai/chat
 import openai/retry
-import ./[config, live_flow, skill_files, ui_doc, ui_parse, ui_schema]
+import ./[config, ui_doc, ui_parse, ui_schema]
 
 {.passL: "-lcurl".}
 
 const
   ChatBasePrompt* = "You are the chat agent for an adaptive desktop app. " &
     "Answer the user plainly. " &
-    "When a learning, quiz, essay, or decision flow is active, keep enough task state " &
-    "in your response for a separate UI subagent to render the next screen. " &
+    "Keep enough visible state in each response for a separate UI subagent to " &
+    "render the next screen. " &
     "When the input describes UI values, clicked buttons, selected options, or " &
-    "submitted text, treat that as the user's interaction with the current generated UI."
-
-  FlowPrompts: array[LiveFlowKind, string] = [
-    lfAdaptive: "Adaptive task mode. " &
-      "Help with the user's task directly. The task can be notes, planning, coding, " &
-      "math, forms, decisions, study, games, or normal chat. " &
-      "Keep enough visible task state in the response for the UI subagent to choose " &
-      "an appropriate supported interface. " &
-      "Do not force the task into a quiz or essay unless the user asks for that.",
-    lfChat: "Normal chat mode. " &
-      "Answer conversationally. The UI subagent should usually render this as a " &
-      "transcript or simple text.",
-    lfQuiz: "Live quiz mode. " &
-      "Create or continue a quiz one question at a time. " &
-      "Track score and correct answers in the conversation. " &
-      "When asking a question, include enough structured detail for the UI subagent " &
-      "to render a radio group and submit button. " &
-      "When the input describes a selected option or clicked submit button, treat " &
-      "the current UI values as the user's answer. " &
-      "When grading an answer, compare both the option id and visible label, explain " &
-      "briefly, and then move to the next question or final score.",
-    lfEssay: "Live essay mode. " &
-      "Create or continue an essay practice flow. " &
-      "When starting, provide one essay prompt and a short rubric. " &
-      "When the input describes submitted text, treat that text as the user's essay answer. " &
-      "When the user submits an answer, grade it against the rubric and provide concise feedback. " &
-      "Include enough task state for the UI subagent to render either a text input or feedback screen."
-  ]
+    "submitted text, treat that as the user's interaction with the current generated UI. " &
+    "Do not force tasks into a fixed interaction pattern unless the user explicitly " &
+    "asks for that shape."
 
   UiBasePrompt = "You are the UI subagent for a Nim desktop app. " &
     "Return only one valid UiDoc JSON object. " &
@@ -52,20 +27,9 @@ const
     "- Every area name must exist in layout.\n" &
     "- Supported kinds: text, code, radio, buttons, textInput, math, transcript.\n" &
     "- radio/buttons require id and non-empty options.\n" &
-    "- textInput requires id and may use placeholder and submitLabel."
-
-  UiFlowHints: array[LiveFlowKind, string] = [
-    lfAdaptive: "Current flow: adaptive task. Choose the smallest supported UI that " &
-      "fits the task: text, transcript, code, math, radio/buttons for decisions, " &
-      "textInput for open responses. Do not default to quiz or essay unless requested.",
-    lfChat: "Current flow: normal chat. Prefer transcript or text unless the response " &
-      "clearly asks for interactive controls.",
-    lfQuiz: "Current flow: quiz. Prefer one radio area for answer choices and one " &
-      "buttons area for submit/next/finish actions. Keep option ids stable between turns.",
-    lfEssay: "Current flow: essay. Prefer one prompt area, one textInput area for " &
-      "the answer, and one buttons area for submit actions. Use submitLabel on textInput " &
-      "when the input should submit directly."
-  ]
+    "- textInput requires id and may use placeholder and submitLabel.\n" &
+    "- Choose the smallest supported UI that fits the task. Do not default to a " &
+    "specific interaction pattern unless the conversation requires it."
 
   MaxRetries = 3
 
@@ -84,7 +48,6 @@ type
     apWaitingUi
 
   ResultKind* = enum
-    resNone,
     resChatText,
     resUiDoc,
     resError
@@ -103,14 +66,29 @@ type
     chatHistory*: seq[ChatEntry]
     uiSystemMsg: ChatMessage
     uiFormat: ResponseFormat
-    skillSummary: string
     phase: AgentPhase
     attempt: int
     pendingDoc: UiDoc
     nextId: int64
-    rng: Rand
 
-proc initAgentState*(cfg: AppConfig; skills = SkillLibrary()): AgentState =
+  ApiErrorObject = object
+    message: string
+    `type`: string
+    param: Option[string]
+    code: Option[string]
+
+  ApiErrorEnvelope = object
+    error: ApiErrorObject
+
+  ApiDetailItem = object
+    `type`: string
+    loc: seq[string]
+    msg: string
+
+  ApiDetailListEnvelope = object
+    detail: seq[ApiDetailItem]
+
+proc initAgentState*(cfg: AppConfig): AgentState =
   result = AgentState(
     cfg: cfg,
     endpoint: OpenAIConfig(
@@ -123,11 +101,9 @@ proc initAgentState*(cfg: AppConfig; skills = SkillLibrary()): AgentState =
       maxRedirects = 5
     ),
     chatMessages: @[systemMessageText(ChatBasePrompt)],
-    uiSystemMsg: systemMessageText(UiBasePrompt & "\n\n" & UiFlowHints[lfAdaptive]),
+    uiSystemMsg: systemMessageText(UiBasePrompt),
     uiFormat: uiDocFmt,
-    skillSummary: skills.skillSummary(),
-    nextId: 1,
-    rng: initRand(epochTime().int64)
+    nextId: 1
   )
 
 proc close*(state: var AgentState) =
@@ -138,14 +114,83 @@ proc close*(state: var AgentState) =
 proc hasPending*(state: AgentState): bool =
   state.phase != apIdle
 
-proc setFlow*(state: var AgentState; kind: LiveFlowKind) =
-  let sysText = ChatBasePrompt & "\n\n" & FlowPrompts[kind]
-  if state.chatMessages.len > 0 and state.chatMessages[0].role == ChatMessageRole.system:
-    state.chatMessages[0] = systemMessageText(sysText)
+proc appendField(text: var string; name, value: string) =
+  if value.strip().len == 0:
+    return
+  if text.len > 0:
+    text.add ", "
+  text.add name
+  text.add ": "
+  text.add value.strip()
+
+proc shortened(text: string; limit = 700): string =
+  result = text.strip()
+  if result.len > limit:
+    result = result[0 ..< limit] & "..."
+
+proc optionText(value: Option[string]): string =
+  if value.isSome:
+    result = value.get()
+
+proc apiDetailLocation(item: ApiDetailItem): string =
+  for part in item.loc:
+    if part.len > 0:
+      if result.len > 0:
+        result.add "."
+      result.add part
+
+proc openAiErrorMessage(status: int; body: string; message: var string): bool =
+  let prefix = "HTTP " & $status & ": "
+  result = false
+  try:
+    let parsed = fromJson(body, ApiErrorEnvelope)
+    if parsed.error.message.strip().len > 0:
+      var details = ""
+      details.appendField("type", parsed.error.`type`)
+      details.appendField("param", parsed.error.param.optionText())
+      details.appendField("code", parsed.error.code.optionText())
+      message = prefix & parsed.error.message.strip()
+      if details.len > 0:
+        message.add " (" & details & ")"
+      result = true
+  except CatchableError:
+    discard
+
+proc validationErrorMessage(status: int; body: string; message: var string): bool =
+  let prefix = "HTTP " & $status & ": "
+  result = false
+  try:
+    let parsed = fromJson(body, ApiDetailListEnvelope)
+    if parsed.detail.len > 0:
+      let item = parsed.detail[0]
+      message = prefix
+      if item.msg.strip().len > 0:
+        message.add item.msg.strip()
+      else:
+        message.add "request validation failed"
+      let loc = item.apiDetailLocation()
+      var details = ""
+      details.appendField("type", item.`type`)
+      details.appendField("field", loc)
+      if details.len > 0:
+        message.add " (" & details & ")"
+      if parsed.detail.len > 1:
+        message.add " +" & $(parsed.detail.len - 1) & " more"
+      result = true
+  except CatchableError:
+    discard
+
+proc apiErrorMessage*(status: int; body: string): string =
+  var message = ""
+  if openAiErrorMessage(status, body, message):
+    return message
+  if validationErrorMessage(status, body, message):
+    return message
+
+  if body.strip().len > 0:
+    result = "HTTP " & $status & ": " & body.shortened()
   else:
-    state.chatMessages.insert(systemMessageText(sysText), 0)
-  let uiSysText = UiBasePrompt & "\n\n" & UiFlowHints[kind]
-  state.uiSystemMsg = systemMessageText(uiSysText)
+    result = "HTTP " & $status & ": empty error response"
 
 proc clearHistory*(state: var AgentState) =
   let sysMsg = if state.chatMessages.len > 0: state.chatMessages[0]
@@ -155,8 +200,7 @@ proc clearHistory*(state: var AgentState) =
   state.phase = apIdle
   state.attempt = 0
 
-proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc;
-    skillSummary: string): string =
+proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc): string =
   result = "Conversation so far:\n"
   if chatHistory.len == 0:
     result.add "(empty)\n"
@@ -194,13 +238,7 @@ proc enqueue(state: var AgentState; messages: seq[ChatMessage];
 
 proc buildUiMessages(state: AgentState): seq[ChatMessage] =
   result.add state.uiSystemMsg
-  let userText = formatUiUserMsg(state.chatHistory, state.pendingDoc,
-    state.skillSummary)
-  if state.skillSummary.len > 0:
-    result.add userMessageText(
-      "Available skill files:\n" & state.skillSummary & "\n\n" & userText)
-  else:
-    result.add userMessageText(userText)
+  result.add userMessageText(formatUiUserMsg(state.chatHistory, state.pendingDoc))
 
 proc submitChat*(state: var AgentState; userText: string): string =
   let text = userText.strip()
@@ -208,6 +246,8 @@ proc submitChat*(state: var AgentState; userText: string): string =
     return "input is empty"
   if state.client == nil:
     return "agent is closed"
+  if not state.cfg.hasKey():
+    return "Set OPENAI_API_KEY for generated UI."
   state.chatMessages.add userMessageText(text)
   state.chatHistory.add ChatEntry(role: arUser, content: text)
   state.phase = apWaitingChat
@@ -238,7 +278,7 @@ proc extractText(item: RequestResult): string =
     raise newException(IOError, $item.error.kind & ": " & item.error.message)
   if not isHttpSuccess(item.response.code):
     raise newException(IOError,
-      "HTTP " & $item.response.code & ": " & item.response.body)
+      apiErrorMessage(item.response.code, item.response.body))
   var parsed: ChatCreateResult
   if not chatParse(item.response.body, parsed):
     raise newException(ValueError, "failed to parse chat response")
@@ -279,12 +319,11 @@ proc poll*(state: var AgentState; outResult: var AgentResult): bool =
     let text = extractText(item)
     let phase = state.phase
     state.phase = apIdle
-    case phase
-    of apWaitingChat:
+    if phase == apWaitingChat:
       state.chatMessages.add assistantMessageText(text)
       state.chatHistory.add ChatEntry(role: arAssistant, content: text)
       outResult = AgentResult(kind: resChatText, text: text)
-    of apWaitingUi:
+    else:
       var doc: UiDoc
       var parseErr = ""
       if parseUiDoc(text, doc, parseErr):
@@ -292,8 +331,6 @@ proc poll*(state: var AgentState; outResult: var AgentResult): bool =
       else:
         outResult = AgentResult(kind: resError,
           error: "invalid UI document: " & parseErr, text: text)
-    else:
-      outResult = AgentResult(kind: resError, error: "unexpected phase")
   except CatchableError:
     let err = getCurrentExceptionMsg()
     let attemptBefore = state.attempt

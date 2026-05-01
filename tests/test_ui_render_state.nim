@@ -1,4 +1,4 @@
-import std/[strutils, tables]
+import std/tables
 import adaptive_ui/[components, ui_doc, ui_render]
 import uirelays
 
@@ -99,7 +99,6 @@ block:
   let cells = resolveUiDocCells(doc, rt, rect(0, 0, 240, 80),
     fm.lineHeight, renderDoc)
 
-  doAssert rt.status.startsWith("layout error:")
   doAssert renderDoc.title == "Adaptive UI"
   doAssert cells.hasKey("main")
 
@@ -107,7 +106,7 @@ block:
   let area = UiArea(
     name: "answer",
     kind: ukTextInput,
-    id: "essay",
+    id: "open_response",
     submitLabel: "Submit"
   )
   let r = rect(0, 0, 320, 160)
@@ -122,13 +121,13 @@ block:
 
   let ev = textInputSubmitEvent(area,
     Event(kind: MouseDownEvent, x: b.x + 2, y: b.y + 2, button: LeftButton),
-    r, font, "essay text")
+    r, font, "response text")
   doAssert ev.kind == ueSubmitText
-  doAssert ev.id == "essay"
-  doAssert ev.value == "essay text"
+  doAssert ev.id == "open_response"
+  doAssert ev.value == "response text"
 
 block:
-  let area = UiArea(name: "answer", kind: ukTextInput, id: "essay")
+  let area = UiArea(name: "answer", kind: ukTextInput, id: "open_response")
   let r = rect(0, 0, 320, 160)
   let b = textInputButtonRect(r, font, area.submitLabel)
   let editor = textInputEditorRect(area, r, font)
@@ -141,12 +140,12 @@ block:
   let area = UiArea(
     name: "answer",
     kind: ukTextInput,
-    id: "essay",
+    id: "open_response",
     placeholder: "Write your answer"
   )
   doAssert textInputPlaceholder(area, "") == "Write your answer"
   doAssert textInputPlaceholder(area, "draft") == ""
 
 block:
-  let area = UiArea(name: "answer", kind: ukTextInput, id: "essay")
+  let area = UiArea(name: "answer", kind: ukTextInput, id: "open_response")
   doAssert textInputPlaceholder(area, "") == ""

@@ -60,7 +60,7 @@ proc ensureEditor(rt: var UiRuntime; area: UiArea; font: Font;
     theme: Theme): string =
   let key = componentKey(area)
   if not rt.components.hasKey(key):
-    rt.components[key] = ComponentState(textBufferId: key)
+    rt.components[key] = ComponentState()
   if not rt.components[key].hasEditor:
     rt.components[key].editor = createSynEdit(font, theme)
     rt.components[key].hasEditor = true
@@ -282,7 +282,6 @@ proc resolveUiDocCells*(doc: UiDoc; rt: var UiRuntime; area: Rect;
   if result.len > 0:
     renderDoc = doc
   else:
-    rt.status = "layout error: layout produced no cells"
     renderDoc = fallbackUiDoc("The generated UI layout could not be rendered.")
     result = parseLayout(renderDoc.layout).resolve(area.w, area.h, lineHeight, gap = 2)
 
@@ -307,27 +306,20 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
 
   result = noUiEvent()
   for areaDef in renderDoc.areas:
-    if not cells.hasKey(areaDef.name):
-      discard
-    else:
-      let areaView = displayArea(areaDef)
-      let r = cells[areaView.name]
-      let focused = rt.focus == areaView.name
-      let routedEvent = if focused: e else: default Event
-      let ev =
-        case areaView.kind
-        of ukText, ukTranscript, ukCode, ukMath:
-          renderTextArea(rt, areaView, routedEvent, r, focused, font, theme)
-        of ukRadio:
-          renderRadio(rt, areaView, routedEvent, r, fm, font, theme)
-        of ukButtons:
-          renderButtons(areaView, routedEvent, r, font, theme)
-        of ukTextInput:
-          renderTextInput(rt, areaView, routedEvent, r, focused, font, theme)
+    let areaView = displayArea(areaDef)
+    let r = cells[areaView.name]
+    let focused = rt.focus == areaView.name
+    let routedEvent = if focused: e else: default Event
+    let ev =
+      case areaView.kind
+      of ukText, ukTranscript, ukCode, ukMath:
+        renderTextArea(rt, areaView, routedEvent, r, focused, font, theme)
+      of ukRadio:
+        renderRadio(rt, areaView, routedEvent, r, fm, font, theme)
+      of ukButtons:
+        renderButtons(areaView, routedEvent, r, font, theme)
+      of ukTextInput:
+        renderTextInput(rt, areaView, routedEvent, r, focused, font, theme)
 
-      if ev.kind != ueNone:
-        result = ev
-
-  if renderDoc.areas.len == 0:
-    discard drawText(font, area.x + Pad, area.y + Pad,
-      "No UI areas to render.", theme.fg[TokenClass.Red], theme.bg)
+    if ev.kind != ueNone:
+      result = ev

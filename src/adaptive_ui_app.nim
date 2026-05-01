@@ -1,4 +1,4 @@
 import adaptive_ui/app
 
 when isMainModule:
-  runApp()
+  runApp(configPath = "adaptive_app.json")

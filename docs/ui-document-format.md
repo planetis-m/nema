@@ -9,35 +9,35 @@ The subagent returns a JSON object that maps cleanly into Nim objects with `json
 ```json
 {
   "version": 1,
-  "title": "Quiz",
-  "layout": "| title, 2 lines |\\n| prompt, * |\\n| choices, 7 lines |\\n| actions, 2 lines |",
+  "title": "Decision",
+  "layout": "| title, 2 lines |\\n| summary, * |\\n| choices, 7 lines |\\n| actions, 2 lines |",
   "focus": "choices",
   "areas": [
     {
       "name": "title",
       "kind": "text",
-      "text": "Question 1 of 3"
+      "text": "Choose an approach"
     },
     {
-      "name": "prompt",
+      "name": "summary",
       "kind": "text",
-      "text": "Which keyword declares an immutable local binding in Nim?"
+      "text": "The user asked for help comparing two implementation options."
     },
     {
       "name": "choices",
       "kind": "radio",
-      "id": "q1_answer",
+      "id": "approach",
       "options": [
-        { "id": "a", "label": "var" },
-        { "id": "b", "label": "let" },
-        { "id": "c", "label": "type" }
+        { "id": "simple", "label": "Simple implementation" },
+        { "id": "extensible", "label": "Extensible implementation" }
       ]
     },
     {
       "name": "actions",
+      "id": "decision_actions",
       "kind": "buttons",
       "options": [
-        { "id": "submit", "label": "Submit" }
+        { "id": "apply", "label": "Apply" }
       ]
     }
   ]

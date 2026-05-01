@@ -7,7 +7,7 @@ import widgets/synedit
 import widgets/theme
 import ./[
   agent, components, config, debug_log, interaction, live_flow,
-  skill_files, ui_doc, transcript, ui_render
+  ui_doc, transcript, ui_render
 ]
 
 const
@@ -31,7 +31,6 @@ type
     rt: UiRuntime
     input: SynEdit
     focus: AppFocus
-    flow: LiveFlowKind
     doc: UiDoc
     debugLog: DebugLog
     status: string
@@ -39,7 +38,7 @@ type
     agent: AgentState
 
 proc initAppState(width, height: int; font: Font; theme: Theme;
-    cfg: AppConfig; skills: SkillLibrary; status = ""): AppState =
+    cfg: AppConfig; status = ""): AppState =
   let initStatus =
     if status.len > 0: status
     elif cfg.hasKey(): "Agent ready"
@@ -51,12 +50,11 @@ proc initAppState(width, height: int; font: Font; theme: Theme;
     rt: initUiRuntime(),
     input: createSynEdit(font, theme),
     focus: afAdaptive,
-    flow: lfAdaptive,
-    doc: flowIntroDoc(lfAdaptive),
+    doc: introUiDoc(),
     debugLog: initDebugLog(),
     status: initStatus,
     theme: theme,
-    agent: initAgentState(cfg, skills)
+    agent: initAgentState(cfg)
   )
   result.input.lang = langNone
 
@@ -88,15 +86,21 @@ proc submitText(state: var AppState; text: string) =
   else:
     state.status = ""
 
-proc switchFlow(state: var AppState; kind: LiveFlowKind; text: string) =
-  state.flow = kind
+proc startNewSession(state: var AppState; text: string) =
   state.rt = initUiRuntime()
   state.agent.clearHistory()
-  state.agent.setFlow(kind)
-  state.doc = flowIntroDoc(kind)
-  state.status = flowTitle(kind) & " mode"
+  state.doc = introUiDoc()
+  state.status = "New adaptive session"
   if text.strip().len > 0:
     state.submitText(text)
+
+proc showTranscript(state: var AppState) =
+  state.doc = transcriptUiDoc(state.agent.chatHistory)
+  state.status = "Transcript"
+
+proc showDebugLog(state: var AppState) =
+  state.doc = debugUiDoc(state.debugLog)
+  state.status = "Debug log"
 
 proc handleSubmittedInput(state: var AppState; text: string) =
   if text.strip().len == 0:
@@ -106,11 +110,12 @@ proc handleSubmittedInput(state: var AppState; text: string) =
   case cmd.kind
   of lcNone:
     state.submitText(cmd.text)
-  of lcAdaptive, lcChat, lcQuiz, lcEssay:
-    state.switchFlow(flowForCommand(cmd.kind), cmd.text)
+  of lcNew:
+    state.startNewSession(cmd.text)
+  of lcTranscript:
+    state.showTranscript()
   of lcDebug:
-    state.doc = debugUiDoc(state.debugLog)
-    state.status = "Debug log"
+    state.showDebugLog()
 
 proc handleUiEvent(state: var AppState; ev: UiEvent) =
   case ev.kind
@@ -119,16 +124,12 @@ proc handleUiEvent(state: var AppState; ev: UiEvent) =
   of ueSelect:
     state.status = "Selected " & ev.value
   of ueClick, ueSubmitText:
-    if ev.area == "actions" and ev.id in ["chat", "quiz", "essay"]:
-      case ev.id
-      of "chat":
-        state.switchFlow(lfChat, "")
-      of "quiz":
-        state.switchFlow(lfQuiz, "")
-      of "essay":
-        state.switchFlow(lfEssay, "")
-      else:
-        discard
+    if ev.area == "actions" and ev.id == "new":
+      state.startNewSession("")
+    elif ev.area == "actions" and ev.id == "transcript":
+      state.showTranscript()
+    elif ev.area == "actions" and ev.id == "debug":
+      state.showDebugLog()
     else:
       state.submitText(uiEventText(state.doc, state.rt, ev))
 
@@ -136,8 +137,6 @@ proc pollAgent(state: var AppState) =
   var res: AgentResult
   while state.agent.poll(res):
     case res.kind
-    of resNone:
-      discard
     of resError:
       state.status = res.error
       if res.text.len > 0:
@@ -165,10 +164,9 @@ proc readAppConfig(path: string; status: var string): AppConfig =
     if not fileExists(path):
       status = "Using default config"
   else:
-    result = initAppConfig()
-    status = "Config error: " & err
+    quit "Config error in " & path & ": " & err, 1
 
-proc runApp*(configPath = "adaptive_ui.json";
+proc runApp*(configPath = "adaptive_app.json";
     title = DefaultWindowTitle; width = DefaultWindowWidth;
     height = DefaultWindowHeight) =
   initBackend()
@@ -181,14 +179,12 @@ proc runApp*(configPath = "adaptive_ui.json";
 
   var status = ""
   let cfg = readAppConfig(configPath, status)
-  let skills = loadSkills(cfg.skillRoots)
   var state = initAppState(
     win.width,
     win.height,
     font,
     theme,
     cfg,
-    skills,
     status
   )
 

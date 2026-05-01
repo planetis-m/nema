@@ -7,20 +7,20 @@ const
     "tests/test_control_events.nim",
     "tests/test_debug_log.nim",
     "tests/test_interaction.nim",
-    "tests/test_learning_flow.nim",
     "tests/test_live_flow.nim",
     "tests/test_markdown_math.nim",
-    "tests/test_skill_files.nim",
     "tests/test_transcript.nim",
     "tests/test_ui_doc_parse.nim",
     "tests/test_ui_render_state.nim"
   ]
 
   ExampleFiles = [
-    "examples/adaptive_app.nim",
     "examples/adaptive_gallery.nim",
-    "examples/learning_demo.nim",
     "examples/min_window.nim"
+  ]
+
+  AppFiles = [
+    "src/adaptive_ui_app.nim"
   ]
 
 proc binaryPath(path: string): string =
@@ -49,6 +49,9 @@ proc compileOnly(path: string) =
 
 for path in TestFiles:
   compileAndRun(path)
+
+for path in AppFiles:
+  compileOnly(path)
 
 for path in ExampleFiles:
   compileOnly(path)

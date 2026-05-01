@@ -11,7 +11,6 @@ type
     chatModel*: string
     uiModel*: string
     timeoutMs*: int
-    skillRoots*: seq[string]
 
 proc initAppConfig*(): AppConfig =
   AppConfig(
@@ -19,8 +18,7 @@ proc initAppConfig*(): AppConfig =
     apiKey: getEnv(ApiKeyEnv),
     chatModel: "gpt-4.1-mini",
     uiModel: "gpt-4.1-mini",
-    timeoutMs: 30000,
-    skillRoots: @[getHomeDir() / ".agents" / "skills"]
+    timeoutMs: 30000
   )
 
 proc parseConfig*(text: string; cfg: var AppConfig; err: var string): bool =

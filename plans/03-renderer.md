@@ -30,11 +30,11 @@ This plan should be completed in one agent session after Plans 01 and 02.
    - `ukMath` as text for now
 6. Return a `UiEvent` from the renderer when a component action happens.
 7. Keep drawing simple: background, border, text, selected state, hover state.
-8. Add a renderer smoke example with a hardcoded quiz document.
+8. Add a renderer smoke example with a hardcoded generic document.
 
 ## Acceptance Criteria
 
-- Hardcoded quiz UI renders.
+- Hardcoded generic UI renders.
 - Mouse click selects a radio option.
 - Submit button emits a `ueClick`.
 - Text and code areas render through `SynEdit`.
