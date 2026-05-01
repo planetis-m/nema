@@ -68,6 +68,29 @@ block:
 block:
   let doc = UiDoc(
     version: 1,
+    layout: """
+| title, 2 lines |
+| body, * |
+| aside, 3 lines |
+""",
+    areas: @[
+      UiArea(name: "title", kind: ukText, text: "Title"),
+      UiArea(name: "body", kind: ukText, text: "Body")
+    ]
+  )
+  var rt = initUiRuntime()
+  var renderDoc: UiDoc
+  let cells = resolveUiDocCells(doc, rt, rect(0, 0, 300, 200),
+    fm.lineHeight, renderDoc)
+  let missing = renderDoc.missingCellNames(cells)
+
+  doAssert cells.hasKey("aside")
+  doAssert missing.len == 1
+  doAssert missing[0] == "aside"
+
+block:
+  let doc = UiDoc(
+    version: 1,
     layout: "not a layout",
     areas: @[UiArea(name: "main", kind: ukText, text: "ignored")]
   )
@@ -113,3 +136,17 @@ block:
   doAssert b.w == 0
   doAssert b.h == 0
   doAssert editor == r
+
+block:
+  let area = UiArea(
+    name: "answer",
+    kind: ukTextInput,
+    id: "essay",
+    placeholder: "Write your answer"
+  )
+  doAssert textInputPlaceholder(area, "") == "Write your answer"
+  doAssert textInputPlaceholder(area, "draft") == ""
+
+block:
+  let area = UiArea(name: "answer", kind: ukTextInput, id: "essay")
+  doAssert textInputPlaceholder(area, "") == ""

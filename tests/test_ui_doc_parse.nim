@@ -107,6 +107,20 @@ block:
   doAssert "not in layout" in err
 
 block:
+  let json = """{"version":1,"layout":"| main, * |","focus":"other","areas":[{"name":"main","kind":"text"}]}"""
+  var doc: UiDoc
+  var err = ""
+  doAssert not parses(json, doc, err)
+  doAssert "focus other is not in layout" in err
+
+block:
+  let json = """{"version":1,"layout":"| main, * |","areas":[{"name":"main","kind":"text"},{"name":"main","kind":"text"}]}"""
+  var doc: UiDoc
+  var err = ""
+  doAssert not parses(json, doc, err)
+  doAssert "duplicate area name main" in err
+
+block:
   let json = """{"version":1,"layout":"| main, *; detail, 2 lines |","areas":[{"name":"detail","kind":"text"}]}"""
   var doc: UiDoc
   var err = ""

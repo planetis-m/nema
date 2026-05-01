@@ -1,4 +1,4 @@
-import std/[strutils, tables]
+import std/[sets, strutils, tables]
 import jsonx
 import uirelays/layout
 import ./ui_doc
@@ -39,9 +39,17 @@ proc validateLayoutAreas(doc: UiDoc; err: var string): bool =
     if cells.len == 0:
       return fail(err, "layout has no cells")
 
+    var names = initHashSet[string]()
     for area in doc.areas:
+      if names.contains(area.name):
+        return fail(err, "duplicate area name " & area.name)
+      names.incl area.name
       if not cells.hasKey(area.name):
         return fail(err, "area " & area.name & " is not in layout")
+
+    if doc.focus.strip.len > 0 and not cells.hasKey(doc.focus):
+      return fail(err, "focus " & doc.focus & " is not in layout")
+
     result = true
   except CatchableError:
     result = fail(err, "layout parse error: " & getCurrentExceptionMsg())

@@ -200,6 +200,12 @@ proc textInputSubmitEvent*(area: UiArea; e: Event; r: Rect; font: Font;
   if b.w > 0 and b.h > 0 and b.contains(point(e.x, e.y)):
     result = eventForSubmit(area, text)
 
+proc textInputPlaceholder*(area: UiArea; text: string): string =
+  if area.placeholder.strip().len > 0 and text.len == 0:
+    result = area.placeholder
+  else:
+    result = ""
+
 proc drawTextInputButton(area: UiArea; r: Rect; font: Font; theme: Theme) =
   let b = textInputButtonRect(r, font, area.submitLabel)
   if b.w > 0 and b.h > 0:
@@ -207,6 +213,13 @@ proc drawTextInputButton(area: UiArea; r: Rect; font: Font; theme: Theme) =
     drawBorder(b, theme.fg[TokenClass.Operator])
     discard drawText(font, b.x + 14, b.y + max(4, (b.h - fontLineSkip(font)) div 2),
       area.submitLabel, theme.fg[TokenClass.Text], theme.selBg)
+
+proc drawTextInputPlaceholder(area: UiArea; text: string; r: Rect;
+    font: Font; theme: Theme) =
+  let placeholder = textInputPlaceholder(area, text)
+  if placeholder.len > 0:
+    discard drawText(font, r.x + Pad * 2, r.y + Pad * 2,
+      placeholder, theme.fg[TokenClass.Comment], theme.bg)
 
 proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
     focused: bool; font: Font; theme: Theme): UiEvent =
@@ -238,12 +251,31 @@ proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
   let editorRect = textInputEditorRect(area, r, font)
   discard rt.components[key].editor.draw(drawEvent, editorRect.inset(Pad), focused)
   rt.setText(area, rt.components[key].editor.fullText)
+  drawTextInputPlaceholder(area, rt.components[key].editor.fullText,
+    editorRect, font, theme)
   drawTextInputButton(area, r, font, theme)
 
   if submit:
     result = eventForSubmit(area, rt.components[key].editor.fullText)
   else:
     result = noUiEvent()
+
+proc hasArea(doc: UiDoc; name: string): bool =
+  for area in doc.areas:
+    if area.name == name:
+      return true
+  result = false
+
+proc missingCellNames*(doc: UiDoc; cells: Table[string, Rect]): seq[string] =
+  for name in cells.keys:
+    if not doc.hasArea(name):
+      result.add name
+
+proc drawEmptyCells(doc: UiDoc; cells: Table[string, Rect]; theme: Theme) =
+  for name in doc.missingCellNames(cells):
+    let r = cells[name]
+    fillRect(r, theme.bg)
+    drawBorder(r, theme.scrollTrackColor)
 
 proc resolveUiDocCells*(doc: UiDoc; rt: var UiRuntime; area: Rect;
     lineHeight: int; renderDoc: var UiDoc): Table[string, Rect] =
@@ -266,8 +298,10 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
   var renderDoc: UiDoc
   var cells = resolveUiDocCells(doc, rt, area, fm.lineHeight, renderDoc)
   fillRect(area, theme.bg)
+  drawEmptyCells(renderDoc, cells, theme)
 
-  if rt.focus.len == 0 and renderDoc.focus.len > 0:
+  if rt.focus.len == 0 and renderDoc.focus.len > 0 and
+      cells.hasKey(renderDoc.focus):
     rt.setFocus(renderDoc.focus)
 
   if e.kind == MouseDownEvent:
