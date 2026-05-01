@@ -1,11 +1,7 @@
 {
   "apiUrl": "https://api.openai.com/v1/chat/completions",
-  "apiKeyEnv": "OPENAI_API_KEY",
+  "apiKey": "",
   "chatModel": "gpt-4.1-mini",
   "uiModel": "gpt-4.1-mini",
-  "timeoutMs": 30000,
-  "skillRoots": [
-    "/home/you/.agents/skills",
-    "/home/you/.codex/skills"
-  ]
+  "timeoutMs": 30000
 }

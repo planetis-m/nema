@@ -23,7 +23,7 @@ proc validateArea(area: UiArea; index: int) =
         " has empty label")
   of ukTextInput:
     requireValid(area.id.strip.len > 0, "area " & area.name & " requires id")
-  of ukText, ukCode, ukMath, ukTranscript:
+  of ukText, ukCode, ukMath:
     discard
 
 proc validateLayoutAreas(doc: UiDoc) =

@@ -60,7 +60,6 @@ The subagent returns a JSON object that maps cleanly into Nim objects with `json
   - `buttons`
   - `textInput`
   - `math`
-  - `transcript`
 - `id` is required for interactive controls.
 - `options` is required for `radio` and `buttons`.
 - `language` is used by `code`.
@@ -77,7 +76,6 @@ The subagent returns a JSON object that maps cleanly into Nim objects with `json
 | `buttons` | `ukButtons` | direct-drawn buttons |
 | `textInput` | `ukTextInput` | editable `SynEdit` |
 | `math` | `ukMath` | basic math text view |
-| `transcript` | `ukTranscript` | read-only `SynEdit` optimized for chat history |
 
 Implement explicit `readJson` and `writeJson` conversions for `UiKind` if the default enum mapping does not match these exact JSON strings. Do not change the JSON contract to expose Nim enum names.
 

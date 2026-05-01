@@ -36,7 +36,7 @@ proc uiValuesText*(doc: UiDoc; rt: UiRuntime): string =
       value = rt.selectedOption(area)
     of ukTextInput:
       value = rt.textValue(area)
-    of ukText, ukCode, ukButtons, ukMath, ukTranscript:
+    of ukText, ukCode, ukButtons, ukMath:
       discard
 
     if value.strip().len > 0:

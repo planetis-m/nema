@@ -8,8 +8,7 @@ type
     ukRadio,
     ukButtons,
     ukTextInput,
-    ukMath,
-    ukTranscript
+    ukMath
 
   UiOption* = object
     id*: string
@@ -64,8 +63,6 @@ proc readJson*(dst: var UiKind; p: var JsonParser) =
     dst = ukTextInput
   of "math":
     dst = ukMath
-  of "transcript":
-    dst = ukTranscript
   else:
     raiseParseErr(p, "valid UI kind")
 
@@ -83,8 +80,6 @@ proc writeJson*(s: Stream; x: UiKind) =
     writeJson(s, "textInput")
   of ukMath:
     writeJson(s, "math")
-  of ukTranscript:
-    writeJson(s, "transcript")
 
 proc textUiDoc*(title, text: string): UiDoc =
   UiDoc(

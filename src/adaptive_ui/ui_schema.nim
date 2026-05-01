@@ -75,9 +75,9 @@ let uiDocFmt* = formatJsonSchema("ui_doc", UiDocSchema(
           kind: SchemaEnumProp(
             `type`: "string",
             description: "One supported UiKind string.",
-            `enum`: @["text", "code", "radio", "buttons", "textInput", "math", "transcript"]
+            `enum`: @["text", "code", "radio", "buttons", "textInput", "math"]
           ),
-          text: SchemaProp(`type`: "string", description: "Markdown-like text content."),
+          text: SchemaProp(`type`: "string", description: "Plain text content."),
           id: SchemaProp(`type`: "string", description: "Stable component id for interactive areas."),
           options: UiOptionArraySchema(
             `type`: "array",
@@ -89,7 +89,7 @@ let uiDocFmt* = formatJsonSchema("ui_doc", UiDocSchema(
                 label: SchemaProp(`type`: "string", description: "Visible option label."),
                 selected: SchemaProp(`type`: "boolean", description: "Whether this option is selected.")
               ),
-              required: @["id", "label", "selected"],
+              required: @["id", "label"],
               additionalProperties: false
             )
           ),
@@ -97,14 +97,11 @@ let uiDocFmt* = formatJsonSchema("ui_doc", UiDocSchema(
           placeholder: SchemaProp(`type`: "string", description: "Text input placeholder."),
           submitLabel: SchemaProp(`type`: "string", description: "Text input submit button label.")
         ),
-        required: @[
-          "name", "kind", "text", "id", "options", "language",
-          "placeholder", "submitLabel"
-        ],
+        required: @["name", "kind"],
         additionalProperties: false
       )
     )
   ),
-  required: @["version", "title", "layout", "focus", "areas"],
+  required: @["version", "title", "layout", "areas"],
   additionalProperties: false
 ), strict = true)

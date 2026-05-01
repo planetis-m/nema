@@ -20,11 +20,11 @@ This plan should be completed in one agent session.
 3. If Atlas cannot fetch in the current environment, add a documented temporary local path for `/home/ageralis/Projects/uirelays/src` and do not hide that workaround.
 4. Create `src/adaptive_ui.nim` as the public re-export placeholder.
 5. Create `src/adaptive_ui/app.nim` with a minimal SDL3 window, event loop, and shutdown.
-6. Create `examples/min_window.nim` that imports the app module and opens a window.
+6. Compile the main app target as the minimal window smoke test.
 7. Compile with:
 
 ```sh
-nim c -d:sdl3 examples/min_window.nim
+nim c -d:sdl3 src/adaptive_ui_app.nim
 ```
 
 ## Acceptance Criteria

@@ -4,7 +4,6 @@ block commands:
   doAssert parseLiveCommand("hello").kind == lcNone
   doAssert parseLiveCommand("/new").kind == lcNew
   doAssert parseLiveCommand("/new plan a trip").text == "plan a trip"
-  doAssert parseLiveCommand("/transcript").kind == lcTranscript
   doAssert parseLiveCommand("/debug").kind == lcDebug
 
 block introDoc:
@@ -13,4 +12,3 @@ block introDoc:
   doAssert doc.title == "Adaptive UI"
   doAssert doc.areas.len == 2
   doAssert doc.areas[1].name == "guide"
-

@@ -35,13 +35,12 @@ The JSON object must match this shape:
 
 Supported area kinds:
 
-- `text`: read-only markdown-like text.
+- `text`: read-only plain text.
 - `code`: read-only code. Include `language`.
 - `radio`: one selected choice. Include `id` and `options`.
 - `buttons`: one or more buttons. Include `options`.
 - `textInput`: editable multiline input. Include `id`, optional `placeholder`, and optional `submitLabel`.
 - `math`: basic math text. Use plain LaTeX-like text in `text`.
-- `transcript`: chat-style read-only text.
 
 Every `areas[].name` must appear as a cell name in `layout`.
 
@@ -71,7 +70,7 @@ Behavior rules:
 - For quiz questions, use one `radio` area and one `buttons` area.
 - For essay prompts, use one `textInput` area and one `buttons` area.
 - For study notes, use `text` and optional `code` or `math` areas.
-- For normal chat, use `transcript` or `text`.
+- For normal chat, use `text`.
 - If the task state contains feedback or scores, show them plainly.
 - Do not invent unsupported components.
 - Do not request APIs, browser features, images, or file access.
@@ -80,7 +79,9 @@ Behavior rules:
 Text rules:
 
 - Keep text readable in a desktop window.
-- Use plain markdown-like formatting only: headings, bullets, numbered lists, fenced code text if needed.
+- Use plain text in `text` areas. Do not include markdown headings, fenced code,
+  or formatting markers.
+- Put source code in `code` areas, not inside `text`.
 - For math, use short expressions such as `x^2 + y^2 = z^2` or `\\frac{a}{b}`.
 - Escape JSON strings correctly.
 

@@ -83,7 +83,8 @@ Important facts:
 
 - The SDK is relay-native. It builds `RequestSpec`s through `chatRequest` and `chatAdd`.
 - Use `chatCreate`, `systemMessageText`, `userMessageText`, and `assistantMessageText`.
-- Use `formatJsonSchema` for structured output from the UI subagent.
+- Use `formatJsonSchema` for structured output from the UI subagent, and
+  validate the returned document locally with `parseUiDoc`.
 - Use `chatParse` to parse raw response JSON into `ChatCreateResult`.
 - Use `firstText`, `parseFirstTextJson`, `calls`, `parseFirstCallArgs`, and related accessors.
 - Tool-calling support exists, but the first UI prototype can avoid tool execution unless needed.
@@ -95,7 +96,9 @@ Run two logical model roles through the same SDK:
 - Chat agent: produces normal assistant content and task reasoning.
 - UI agent: converts the latest task state into a strict UI document.
 
-The UI agent should return structured JSON containing a markdown layout table and named areas whose `text` fields contain markdown-like content. The app then uses `jsonx` to parse the result and `uirelays/layout` to resolve the layout.
+The UI agent should return structured JSON containing a markdown layout table
+and named areas. The app then uses `jsonx` to parse the result and
+`uirelays/layout` to resolve the layout.
 
 ## jsonx
 

@@ -5,7 +5,6 @@ type
   LiveCommandKind* = enum
     lcNone,
     lcNew,
-    lcTranscript,
     lcDebug
 
   LiveCommand* = object
@@ -26,8 +25,6 @@ proc parseLiveCommand*(input: string): LiveCommand =
   let lowered = trimmed.toLowerAscii()
   if lowered.isCommand("/new"):
     result = LiveCommand(kind: lcNew, text: commandPayload(trimmed, "/new"))
-  elif lowered == "/transcript" or lowered == "/conversation":
-    result = LiveCommand(kind: lcTranscript)
   elif lowered == "/debug":
     result = LiveCommand(kind: lcDebug)
   else:

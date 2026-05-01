@@ -26,7 +26,7 @@ This plan should be completed in one agent session. Do not implement rendering i
 4. Create `src/adaptive_ui/ui_parse.nim`.
 5. Add `parseUiDoc(text: string; doc: var UiDoc; err: var string): bool`.
 6. Use `jsonx.fromJson`, not `std/json`.
-7. Add explicit `UiKind` JSON mapping if needed so JSON uses `text`, `code`, `radio`, `buttons`, `textInput`, `math`, and `transcript`.
+7. Add explicit `UiKind` JSON mapping if needed so JSON uses `text`, `code`, `radio`, `buttons`, `textInput`, and `math`.
 8. Validate after parsing:
    - `version == 1`
    - layout is non-empty and accepted by `parseLayout`

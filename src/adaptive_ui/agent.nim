@@ -1,4 +1,4 @@
-import std/[options, strutils, strformat]
+import std/[options, strutils]
 import jsonx
 import relay
 import openai/chat
@@ -17,7 +17,7 @@ const
     "steps, use 'Next action: type' and ask for exactly the needed input. " &
     "For completed steps, use 'Next action: none'. Treat UI values, clicks, " &
     "selections, and submitted text as the user's interaction with the current " &
-    "screen. Do not mention JSON, layouts, renderers, tabs, transcript, debug, " &
+    "screen. Do not mention JSON, layouts, renderers, tabs, debug, " &
     "or implementation details."
 
   UiBasePrompt* = "You are the UI Agent for a Nim desktop app. " &
@@ -42,10 +42,16 @@ const
     "from text areas and put code blocks in code areas.\n" &
     "- layout must be a uirelays markdown table and every area name must exist " &
     "in layout.\n" &
-    "- Supported kinds: text, code, radio, buttons, textInput, math, transcript.\n" &
+    "- If you include a radio or buttons area, include that exact area name in " &
+    "layout.\n" &
+    "- Supported kinds: text, code, radio, buttons, textInput, math.\n" &
+    "- radio/buttons options must be objects like " &
+    "{\"id\":\"a\",\"label\":\"Choice A\"}; never use string options.\n" &
     "- radio/buttons require id and non-empty options. textInput requires id.\n" &
     "- Keep component ids stable, lowercase, and specific to the current step.\n" &
-    "- Never use transcript or debug as normal workflow screens."
+    "- Example choice layout: " &
+    "{\"version\":1,\"title\":\"Quiz\",\"layout\":\"| prompt, * |\\n| choices, 7 lines |\\n| actions, 2 lines |\",\"areas\":[{\"name\":\"prompt\",\"kind\":\"text\",\"text\":\"Question text\"},{\"name\":\"choices\",\"kind\":\"radio\",\"id\":\"answer\",\"options\":[{\"id\":\"a\",\"label\":\"First\"},{\"id\":\"b\",\"label\":\"Second\"}]},{\"name\":\"actions\",\"kind\":\"buttons\",\"id\":\"actions\",\"options\":[{\"id\":\"submit\",\"label\":\"Submit\"}]}],\"focus\":\"choices\"}.\n" &
+    "- Never use debug as a normal workflow screen."
 
   MaxRetries = 3
 
@@ -307,7 +313,6 @@ proc submitChat*(state: var AgentState; userText: string): string =
   state.attempt = 1
   state.pendingChatMessages = messages
   state.pendingUserText = text
-  stderr.writeLine fmt"[AGENT] submitChat: requestId={state.activeRequestId} model={state.cfg.chatModel} text={text[0..min(60,text.len-1)]}"
   result = ""
 
 proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
@@ -315,20 +320,17 @@ proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
     return "agent is closed"
   let busy = state.busyError()
   if busy.len > 0:
-    stderr.writeLine fmt"[AGENT] enqueueUi blocked: {busy} phase={state.phase}"
     return busy
   try:
     state.activeRequestId = state.enqueue(state.buildUiMessages(currentDoc),
       state.cfg.uiModel, 1200, uiDocFmt)
   except IOError:
     let err = getCurrentExceptionMsg()
-    stderr.writeLine fmt"[AGENT] enqueueUi IOError: {err}"
     state.resetPending()
     return err
   state.phase = apWaitingUi
   state.attempt = 1
   state.pendingDoc = currentDoc
-  stderr.writeLine fmt"[AGENT] enqueueUi: requestId={state.activeRequestId} model={state.cfg.uiModel}"
   result = ""
 
 proc extractText(item: RequestResult): string =
@@ -383,7 +385,6 @@ proc pollActiveResult(state: var AgentState; item: var RequestResult): bool =
   result = false
 
 proc finishChat(state: var AgentState; text: string; outResult: var AgentResult) =
-  stderr.writeLine fmt"[AGENT] finishChat: len={text.len} preview={text[0..min(120,text.len-1)]}"
   state.chatMessages = state.pendingChatMessages
   state.chatMessages.add assistantMessageText(text)
   state.chatHistory.add ChatEntry(role: arUser, content: state.pendingUserText)
@@ -392,16 +393,12 @@ proc finishChat(state: var AgentState; text: string; outResult: var AgentResult)
   outResult = AgentResult(kind: resChatText, text: text)
 
 proc finishUi(state: var AgentState; text: string; outResult: var AgentResult) =
-  stderr.writeLine fmt"[AGENT] finishUi: raw response len={text.len}"
-  stderr.writeLine fmt"[AGENT] finishUi: raw={text[0..min(300,text.len-1)]}"
   var doc: UiDoc
   var parseErr = ""
   state.resetPending()
   if parseUiDoc(text, doc, parseErr):
-    stderr.writeLine fmt"[AGENT] finishUi: parseUiDoc OK title={doc.title} areas={doc.areas.len} layout={doc.layout[0..min(80,doc.layout.len-1)]}"
     outResult = AgentResult(kind: resUiDoc, text: text, doc: doc)
   else:
-    stderr.writeLine fmt"[AGENT] finishUi: parseUiDoc FAILED err={parseErr}"
     outResult = AgentResult(kind: resError,
       error: "invalid UI document: " & parseErr, text: text)
 
@@ -420,13 +417,11 @@ proc poll*(state: var AgentState; outResult: var AgentResult): bool =
   if not state.pollActiveResult(item):
     return false
 
-  stderr.writeLine fmt"[AGENT] poll: got result for requestId={item.response.request.requestId} phase={state.phase} httpCode={item.response.code} transportErr={item.error.kind}"
   try:
     let text = extractText(item)
     state.finishSuccess(text, outResult)
   except CatchableError:
     let err = getCurrentExceptionMsg()
-    stderr.writeLine fmt"[AGENT] poll: extractText failed: {err}"
     let attemptBefore = state.attempt
     try:
       if isRetriable(item) and state.retryCurrent():

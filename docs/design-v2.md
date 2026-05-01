@@ -7,6 +7,16 @@ documents. The core system is not a quiz app, essay app, chat client, tutor, or
 workflow engine. It is a generic `UiDoc` renderer plus a non-blocking agent
 runtime.
 
+The product exists to turn the structure and intent of a chat-agent response
+into an interface. It must not simply display assistant text. A response header
+should become a title or heading area, a multiple-choice prompt should become
+selectable controls, a code block should become a `code` area, and structured
+content should become the matching supported components.
+
+There is no markdown renderer in the adaptive surface. Text areas display plain
+text. The UI agent is responsible for splitting response content into explicit
+areas and choosing a compact layout that fits the available space.
+
 Task-specific workflows must be expressed as generated `UiDoc` data and normal
 `UiEvent` summaries. Do not add hardcoded core modes, prompts, commands, or
 embedded instruction files for a specific use case.
@@ -26,7 +36,6 @@ such as missing API key, network errors, parse errors, and pending requests.
 The core renderer supports these primitives:
 
 - `text`
-- `transcript`
 - `code`
 - `math`
 - `radio`
@@ -66,9 +75,7 @@ src/
     components.nim
     interaction.nim
     live_flow.nim
-    transcript.nim
     debug_log.nim
-    markdown_view.nim
     math_view.nim
 ```
 
@@ -85,7 +92,6 @@ Core modules:
 - `components.nim`: stores persistent component state and creates events.
 - `interaction.nim`: converts events and current UI values into text.
 - `live_flow.nim`: parses generic commands and creates the intro document.
-- `transcript.nim`: creates a transcript document from conversation history.
 - `debug_log.nim`: stores recent failed UI responses.
 
 Removed from core:
@@ -123,7 +129,6 @@ The input bar recognizes only generic commands:
 | Command | Behavior |
 |---|---|
 | `/new [text]` | Clear conversation and component state. Submit optional text. |
-| `/transcript` | Render conversation history as a transcript `UiDoc`. |
 | `/debug` | Render recent failed UI responses. |
 | anything else | Submit text to the current adaptive session. |
 
@@ -137,7 +142,7 @@ The UI subagent returns one JSON object:
 ```nim
 type
   UiKind* = enum
-    ukText, ukCode, ukRadio, ukButtons, ukTextInput, ukMath, ukTranscript
+    ukText, ukCode, ukRadio, ukButtons, ukTextInput, ukMath
 
   UiOption* = object
     id*: string
@@ -172,7 +177,6 @@ JSON kind names are exact:
 | `buttons` | `ukButtons` |
 | `textInput` | `ukTextInput` |
 | `math` | `ukMath` |
-| `transcript` | `ukTranscript` |
 
 Validation:
 
@@ -249,6 +253,8 @@ Rules:
 - Choose the smallest UI that fits current task state.
 - Put code in `code` areas and choices in `radio`/`buttons`; do not rely on
   markdown rendering.
+- Emit plain text in `text` areas; do not pass markdown for the renderer to
+  interpret.
 - Do not reference unsupported app capabilities.
 
 Do not add prompt branches for specific workflows in `agent.nim`. Optional
@@ -301,7 +307,7 @@ Required coverage:
 - Agent state initialization, empty input, and history clearing.
 - Provider API error parsing for OpenAI-style and validation-style responses.
 - Renderer state helpers and layout resolution.
-- Debug log, transcript, markdown, and math helpers.
+- Debug log and math helpers.
 
 Run:
 
@@ -313,16 +319,18 @@ The app target and examples must compile without network access.
 
 ## 15. Current Evidence
 
-The core concept is partially proven:
+The core concept is proven for the current generic path:
 
 - Typed `UiDoc` parsing and schema generation exist.
 - Static renderer examples compile.
 - Component state and event conversion are tested.
 - The app uses Relay polling instead of blocking network calls.
+- Live provider probes confirm native schema requests are sent as
+  `json_schema` and that the configured UI model can return a `UiDoc` accepted
+  by `parseUiDoc`.
 
-Not yet proven:
+Remaining risks:
 
-- End-to-end live model behavior with real UI generation quality.
 - Automated visual assertions for rendered output.
 - Long-session component cleanup under unstable generated ids.
 - Persistence of conversation or generated documents.

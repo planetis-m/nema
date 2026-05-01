@@ -13,7 +13,7 @@ Core rules:
 
 - Use `uirelays` with `-d:sdl3` for UI.
 - Use `uirelays/layout.parseLayout` for generated layouts.
-- Use `SynEdit` for text, code, transcript, and multiline input surfaces.
+- Use `SynEdit` for text, code, and multiline input surfaces.
 - Use `jsonx` for config, state, and agent response parsing.
 - Do not use `std/json` for project data models.
 - Use `relay` and `openai/chat` for model requests.

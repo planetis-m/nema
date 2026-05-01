@@ -31,9 +31,9 @@ block responseFormat:
   doAssert "\"type\":\"json_schema\"" in text
   doAssert "\"name\":\"ui_doc\"" in text
   doAssert "\"strict\":true" in text
-  doAssert "\"enum\":[\"text\",\"code\",\"radio\",\"buttons\",\"textInput\",\"math\",\"transcript\"]" in text
-  doAssert "\"required\":[\"version\",\"title\",\"layout\",\"focus\",\"areas\"]" in text
-  doAssert "\"required\":[\"id\",\"label\",\"selected\"]" in text
+  doAssert "\"enum\":[\"text\",\"code\",\"radio\",\"buttons\",\"textInput\",\"math\"]" in text
+  doAssert "\"required\":[\"version\",\"title\",\"layout\",\"areas\"]" in text
+  doAssert "\"required\":[\"id\",\"label\"]" in text
 
 block uiRequestResponseFormat:
   let request = chatCreate(
@@ -54,6 +54,7 @@ block promptWorkflowRules:
   doAssert "Next action: type" in ChatBasePrompt
   doAssert "Next action: none" in ChatBasePrompt
   doAssert "fenced code -> code area" in UiBasePrompt
+  doAssert "never use string options" in UiBasePrompt
   doAssert "Do not ask the renderer to interpret markdown" in UiBasePrompt
   doAssert "quiz-style" notin ChatBasePrompt
 

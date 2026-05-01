@@ -8,15 +8,13 @@ const
     "tests/test_debug_log.nim",
     "tests/test_interaction.nim",
     "tests/test_live_flow.nim",
-    "tests/test_markdown_math.nim",
-    "tests/test_transcript.nim",
+    "tests/test_math_render.nim",
     "tests/test_ui_doc_parse.nim",
     "tests/test_ui_render_state.nim"
   ]
 
   ExampleFiles = [
-    "examples/adaptive_gallery.nim",
-    "examples/min_window.nim"
+    "examples/adaptive_gallery.nim"
   ]
 
   AppFiles = [

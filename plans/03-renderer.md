@@ -22,7 +22,6 @@ This plan should be completed in one agent session after Plans 01 and 02.
 4. Route one `Event` into the component for the focused area.
 5. Render:
    - `ukText` with read-only `SynEdit`
-   - `ukTranscript` with read-only `SynEdit`
    - `ukCode` with read-only `SynEdit`, line numbers, and language mapping
    - `ukRadio` with direct drawing and click hit testing
    - `ukButtons` with direct drawing and click hit testing

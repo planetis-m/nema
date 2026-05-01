@@ -5,6 +5,13 @@ The core app is a generic renderer plus a non-blocking agent runtime. It must no
 contain task-specific modes for narrow workflows. Domain workflows are represented
 as generated `UiDoc` data.
 
+The central product rule is that the interface adapts to the structure and
+intent of the chat agent's latest response. The app must not render assistant
+text as a markdown document. The UI agent maps response structure to explicit
+components: headings become dedicated title/text areas, choices become
+selectable controls, code becomes `code` areas, and free-form prompts become
+input areas.
+
 ## Product Shape
 
 The app has two visible zones:
@@ -12,16 +19,15 @@ The app has two visible zones:
 - Top adaptive surface: renders the current `UiDoc`.
 - Bottom input bar: persistent `SynEdit` text input.
 
-The adaptive surface can render text, transcripts, code, math text, choices,
-button rows, and multiline input. These are primitives, not product modes.
+The adaptive surface can render text, code, math text, choices, button rows,
+and multiline input. These are primitives, not product modes.
 
 ## Hard Constraints
 
 - Nim only for application code.
 - Use `uirelays` and build with `-d:sdl3`.
 - Use `uirelays/layout.parseLayout` for all layout rectangles.
-- Use `SynEdit` for text-like surfaces: labels, code, transcripts, and text
-  inputs.
+- Use `SynEdit` for text-like surfaces: labels, code, and text inputs.
 - Use `jsonx` for config, state, and agent response parsing.
 - Do not use `std/json` for project data models.
 - Use `relay` and `openai/chat` for model requests.
@@ -45,20 +51,18 @@ src/
     components.nim
     interaction.nim
     live_flow.nim
-    transcript.nim
     debug_log.nim
-    markdown_view.nim
     math_view.nim
 tests/
   tester.nim
 examples/
   adaptive_gallery.nim
-  min_window.nim
 ```
 
 Module responsibilities:
 
-- `adaptive_ui.nim`: public re-export for stable core modules.
+- `adaptive_ui.nim`: public renderer contract re-export for examples and
+  embedders.
 - `adaptive_ui_app.nim`: main executable entrypoint.
 - `app.nim`: window setup, event loop, outer layout, input routing, commands.
 - `config.nim`: typed app config loaded and saved with `jsonx`.
@@ -70,9 +74,7 @@ Module responsibilities:
 - `components.nim`: persistent component state and event constructors.
 - `interaction.nim`: convert UI events and current values into user text.
 - `live_flow.nim`: generic command parsing and the intro `UiDoc`.
-- `transcript.nim`: format conversation history into a transcript `UiDoc`.
 - `debug_log.nim`: bounded raw-response diagnostics.
-- `markdown_view.nim`: small markdown-to-readable-text preprocessor.
 - `math_view.nim`: basic math text fallback.
 
 ## Runtime Data Flow
@@ -88,7 +90,8 @@ One submitted turn follows this path:
    history, then a UI request is enqueued. The chat text is not rendered as a
    provisional screen.
 6. The UI request includes conversation history and the current `UiDoc` JSON.
-7. The UI response is parsed with `jsonx` and validated by `parseUiDoc`.
+7. The UI request uses native JSON schema response format. The response is
+   parsed with `jsonx` and validated by `parseUiDoc`.
 8. `ui_render.nim` resolves `doc.layout` with `parseLayout` and `resolve`.
 9. Components draw inside named cells and may emit one `UiEvent`.
 10. `interaction.nim` converts component events into text for the next turn.
@@ -103,7 +106,6 @@ Commands are generic:
 
 - `/new [text]`: clear conversation, reset runtime component state, and
   optionally submit `text`.
-- `/transcript`: show the current conversation as a transcript `UiDoc`.
 - `/debug`: show recent failed UI responses.
 - Any other input: submit text to the current adaptive session.
 
@@ -129,8 +131,7 @@ cell. Area content cannot create new cells.
 
 Supported area kinds:
 
-- `text`: read-only text through `SynEdit`.
-- `transcript`: read-only transcript through `SynEdit`.
+- `text`: read-only plain text through `SynEdit`.
 - `code`: read-only code through `SynEdit`.
 - `math`: readable text with simple math substitutions.
 - `radio`: choice list with persistent selected option.
@@ -192,6 +193,7 @@ UI subagent:
 - Returns only one valid `UiDoc` JSON object.
 - Interprets the latest chat response and maps its structure to explicit
   components; it does not ask the renderer to interpret markdown.
+- Emits plain text for `text` areas and puts source code only in `code` areas.
 - Uses only the supported component kinds.
 - Chooses the smallest UI that represents the current task state.
 - Does not invent unsupported capabilities.

@@ -1,6 +1,7 @@
 # Plan 07: Code And Basic Math Rendering
 
-Goal: improve display quality for code and math without expanding the UI contract.
+Goal: improve display quality for code and math without expanding the UI
+contract or adding markdown rendering.
 
 ## Scope
 
@@ -14,18 +15,13 @@ This plan should be completed after the renderer works.
 
 ## Tasks
 
-1. Create `src/adaptive_ui/markdown_view.nim`.
-2. Add a small markdown preprocessor for display text:
-   - headings become plain text with simple styling hints where possible
-   - bullets remain readable
-   - fenced code blocks are split into separate code areas only if already assigned by the UI document
-3. Create `src/adaptive_ui/math_view.nim`.
-4. Implement basic math fallback:
+1. Create `src/adaptive_ui/math_view.nim`.
+2. Implement basic math fallback:
    - inline math text stays inline
    - block math is centered or indented as plain text
    - common ASCII substitutions are readable
-5. Keep `ukCode` backed by `SynEdit`.
-6. Add language mapping for at least:
+3. Keep `ukCode` backed by `SynEdit`.
+4. Add language mapping for at least:
    - nim
    - c
    - cpp
@@ -43,4 +39,6 @@ This plan should be completed after the renderer works.
 
 ## Notes
 
-Do not add a full Markdown or LaTeX parser in this plan. The first version needs legible display, not typesetting completeness.
+Do not add a Markdown renderer. The UI agent must map headings, lists, and code
+blocks into explicit `UiDoc` areas before rendering. Do not add a full LaTeX
+parser; the first version needs legible display, not typesetting completeness.

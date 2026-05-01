@@ -3,7 +3,7 @@ import uirelays
 import uirelays/layout
 import widgets/synedit
 import widgets/theme
-import ./[components, markdown_view, math_view, ui_doc]
+import ./[components, math_view, ui_doc]
 
 const
   Pad = 8
@@ -39,7 +39,7 @@ proc sourceLanguageFor*(name: string): SourceLanguage =
     langHtml
   of "xml", ".xml":
     langXml
-  of "console", "transcript":
+  of "console":
     langConsole
   of "text", ".txt", "plain", "plaintext":
     langNone
@@ -49,11 +49,9 @@ proc sourceLanguageFor*(name: string): SourceLanguage =
 proc displayArea(area: UiArea): UiArea =
   result = area
   case area.kind
-  of ukText, ukTranscript:
-    result.text = formatMarkdownText(area.text)
   of ukMath:
     result.text = formatMathText(area.text)
-  of ukCode, ukRadio, ukButtons, ukTextInput:
+  of ukText, ukCode, ukRadio, ukButtons, ukTextInput:
     discard
 
 proc ensureEditor(rt: var UiRuntime; area: UiArea; font: Font;
@@ -74,8 +72,6 @@ proc syncReadOnlyEditor(rt: var UiRuntime; area: UiArea; font: Font;
     case area.kind
     of ukCode:
       sourceLanguageFor(area.language)
-    of ukTranscript:
-      langConsole
     else:
       langNone
 
@@ -303,7 +299,7 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
     let routedEvent = if focused: e else: default Event
     let ev =
       case areaView.kind
-      of ukText, ukTranscript, ukCode, ukMath:
+      of ukText, ukCode, ukMath:
         renderTextArea(rt, areaView, routedEvent, r, focused, font, theme)
       of ukRadio:
         renderRadio(rt, areaView, routedEvent, r, fm, font, theme)

@@ -21,7 +21,7 @@ Use this file as the standing instruction for coding agents working in this repo
 - Use `relay` request polling in the UI loop. Do not block the UI loop with `makeRequest`.
 - Use `openai/chat` helpers for model requests.
 - Use `uirelays/layout.parseLayout`; do not write a replacement layout parser.
-- Use `SynEdit` for labels, code, transcript views, and text inputs unless there is a concrete reason not to.
+- Use `SynEdit` for labels, code views, and text inputs unless there is a concrete reason not to.
 
 ## UI Rules
 

@@ -29,7 +29,7 @@ This plan should be completed after Plan 03.
 4. Render bottom input as editable `SynEdit`.
 5. Submit bottom input on Ctrl+Enter or Cmd+Enter.
 6. Add a generic intro document with neutral actions.
-7. Support only generic commands: `/new`, `/transcript`, and `/debug`.
+7. Support only generic commands: `/new` and `/debug`.
 8. Route renderer events through `interaction.nim`.
 9. Keep optional domain demos out of `app.nim`.
 
