@@ -75,7 +75,6 @@ src/
     components.nim
     interaction.nim
     live_flow.nim
-    debug_log.nim
     math_view.nim
 ```
 
@@ -92,7 +91,6 @@ Core modules:
 - `components.nim`: stores persistent component state and creates events.
 - `interaction.nim`: converts events and current UI values into text.
 - `live_flow.nim`: parses generic commands and creates the intro document.
-- `debug_log.nim`: stores recent failed UI responses.
 
 Removed from core:
 
@@ -115,7 +113,7 @@ One normal submitted turn:
 7. The app immediately enqueues a UI request with history plus current `UiDoc`.
 8. When UI JSON arrives, `parseUiDoc` validates it.
 9. A valid document replaces the current document.
-10. An invalid document is logged and the previous document remains visible.
+10. An invalid document reports an error and the previous document remains visible.
 
 The app has one pending phase at a time: idle, waiting for chat, or waiting for
 UI. `AgentState` stores the active Relay request id and ignores stale results.
@@ -128,8 +126,7 @@ The input bar recognizes only generic commands:
 
 | Command | Behavior |
 |---|---|
-| `/new [text]` | Clear conversation and component state. Submit optional text. |
-| `/debug` | Render recent failed UI responses. |
+| `/new` | Clear conversation and component state. |
 | anything else | Submit text to the current adaptive session. |
 
 Do not add commands for a narrow workflow. A generated document can include

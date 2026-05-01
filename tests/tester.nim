@@ -5,7 +5,6 @@ const
     "tests/test_agent_runtime.nim",
     "tests/test_config.nim",
     "tests/test_control_events.nim",
-    "tests/test_debug_log.nim",
     "tests/test_interaction.nim",
     "tests/test_live_flow.nim",
     "tests/test_math_render.nim",

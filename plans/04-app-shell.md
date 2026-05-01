@@ -17,7 +17,7 @@ This plan should be completed after Plan 03.
 
 1. Expand `src/adaptive_ui/app.nim`.
 2. Define explicit `AppState` with window size, outer layout, current `UiDoc`,
-   `UiRuntime`, bottom input `SynEdit`, status, debug log, and agent state.
+   `UiRuntime`, bottom input `SynEdit`, status, and agent state.
 3. Use this outer layout:
 
 ```text
@@ -29,7 +29,7 @@ This plan should be completed after Plan 03.
 4. Render bottom input as editable `SynEdit`.
 5. Submit bottom input on Ctrl+Enter or Cmd+Enter.
 6. Add a generic intro document with neutral actions.
-7. Support only generic commands: `/new` and `/debug`.
+7. Support only the generic `/new` command.
 8. Route renderer events through `interaction.nim`.
 9. Keep optional domain demos out of `app.nim`.
 

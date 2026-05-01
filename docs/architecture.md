@@ -51,7 +51,6 @@ src/
     components.nim
     interaction.nim
     live_flow.nim
-    debug_log.nim
     math_view.nim
 tests/
   tester.nim
@@ -74,7 +73,6 @@ Module responsibilities:
 - `components.nim`: persistent component state and event constructors.
 - `interaction.nim`: convert UI events and current values into user text.
 - `live_flow.nim`: generic command parsing and the intro `UiDoc`.
-- `debug_log.nim`: bounded raw-response diagnostics.
 - `math_view.nim`: basic math text fallback.
 
 ## Runtime Data Flow
@@ -104,9 +102,7 @@ longer matches the active request are ignored. The render loop never blocks.
 
 Commands are generic:
 
-- `/new [text]`: clear conversation, reset runtime component state, and
-  optionally submit `text`.
-- `/debug`: show recent failed UI responses.
+- `/new`: clear conversation and reset runtime component state.
 - Any other input: submit text to the current adaptive session.
 
 Do not add core commands for specific tasks. If a workflow needs special

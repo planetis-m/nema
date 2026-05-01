@@ -1,34 +1,8 @@
 import std/strutils
 import ./ui_doc
 
-type
-  LiveCommandKind* = enum
-    lcNone,
-    lcNew,
-    lcDebug
-
-  LiveCommand* = object
-    kind*: LiveCommandKind
-    text*: string
-
-proc commandPayload(input, command: string): string =
-  if input.len == command.len:
-    result = ""
-  else:
-    result = input[command.len + 1 .. ^1].strip()
-
-proc isCommand(input, command: string): bool =
-  input == command or input.startsWith(command & " ")
-
-proc parseLiveCommand*(input: string): LiveCommand =
-  let trimmed = input.strip()
-  let lowered = trimmed.toLowerAscii()
-  if lowered.isCommand("/new"):
-    result = LiveCommand(kind: lcNew, text: commandPayload(trimmed, "/new"))
-  elif lowered == "/debug":
-    result = LiveCommand(kind: lcDebug)
-  else:
-    result = LiveCommand(kind: lcNone, text: trimmed)
+proc isNewCommand*(input: string): bool =
+  input.strip().toLowerAscii() == "/new"
 
 proc introUiDoc*(): UiDoc =
   UiDoc(

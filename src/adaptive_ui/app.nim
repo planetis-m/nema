@@ -5,7 +5,7 @@ import uirelays/layout
 import widgets/synedit
 import widgets/theme
 import ./[
-  agent, components, config, debug_log, interaction, live_flow,
+  agent, components, config, interaction, live_flow,
   ui_doc, ui_render
 ]
 
@@ -31,8 +31,6 @@ type
     input: SynEdit
     focus: AppFocus
     doc: UiDoc
-    mainDoc: UiDoc
-    debugLog: DebugLog
     status: string
     theme: Theme
     agent: AgentState
@@ -51,8 +49,6 @@ proc initAppState(width, height: int; font: Font; theme: Theme;
     input: createSynEdit(font, theme),
     focus: afAdaptive,
     doc: introUiDoc(),
-    mainDoc: introUiDoc(),
-    debugLog: initDebugLog(),
     status: initStatus,
     theme: theme,
     agent: initAgentState(cfg)
@@ -82,10 +78,8 @@ proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
       state.input.clear()
     result = default Event
 
-proc replaceDoc(state: var AppState; doc: UiDoc; rememberMain = true) =
+proc replaceDoc(state: var AppState; doc: UiDoc) =
   state.doc = doc
-  if rememberMain:
-    state.mainDoc = doc
   state.rt.focus = ""
 
 proc submitText(state: var AppState; text: string) =
@@ -95,30 +89,21 @@ proc submitText(state: var AppState; text: string) =
   else:
     state.status = ""
 
-proc startNewSession(state: var AppState; text: string) =
+proc startNewSession(state: var AppState) =
   state.rt = initUiRuntime()
   state.agent.clearHistory()
   state.replaceDoc(introUiDoc())
   state.status = "New adaptive session"
-  if text.strip().len > 0:
-    state.submitText(text)
-
-proc showDebugLog(state: var AppState) =
-  state.replaceDoc(debugUiDoc(state.debugLog), rememberMain = false)
-  state.status = "Diagnostics"
 
 proc handleSubmittedInput(state: var AppState; text: string) =
-  if text.strip().len == 0:
+  let trimmed = text.strip()
+  if trimmed.len == 0:
     return
 
-  let cmd = parseLiveCommand(text)
-  case cmd.kind
-  of lcNone:
-    state.submitText(cmd.text)
-  of lcNew:
-    state.startNewSession(cmd.text)
-  of lcDebug:
-    state.showDebugLog()
+  if isNewCommand(trimmed):
+    state.startNewSession()
+  else:
+    state.submitText(trimmed)
 
 proc handleUiEvent(state: var AppState; ev: UiEvent) =
   case ev.kind
@@ -127,11 +112,7 @@ proc handleUiEvent(state: var AppState; ev: UiEvent) =
   of ueSelect:
     state.status = "Selected " & ev.value
   of ueClick, ueSubmitText:
-    if ev.id == "back" and ev.area == "utility_actions":
-      state.replaceDoc(state.mainDoc)
-      state.status = ""
-    else:
-      state.submitText(uiEventText(state.doc, state.rt, ev))
+    state.submitText(uiEventText(state.doc, state.rt, ev))
 
 proc pollAgent(state: var AppState) =
   var res: AgentResult
@@ -139,10 +120,8 @@ proc pollAgent(state: var AppState) =
     case res.kind
     of resError:
       state.status = res.error
-      if res.text.len > 0:
-        state.debugLog.addDebug(res.text)
     of resChatText:
-      let err = state.agent.enqueueUi(state.mainDoc)
+      let err = state.agent.enqueueUi(state.doc)
       if err.len > 0:
         state.status = err
       else:

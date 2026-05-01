@@ -87,7 +87,8 @@ Important facts:
   validate the returned document locally with `parseUiDoc`.
 - Use `chatParse` to parse raw response JSON into `ChatCreateResult`.
 - Use `firstText`, `parseFirstTextJson`, `calls`, `parseFirstCallArgs`, and related accessors.
-- Tool-calling support exists, but the first UI prototype can avoid tool execution unless needed.
+- Tool-calling support exists, but this app does not need tool execution in the
+  core chat-to-UI path.
 
 Design consequence:
 

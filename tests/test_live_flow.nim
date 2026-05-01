@@ -1,10 +1,11 @@
 import adaptive_ui/[live_flow, ui_doc]
 
 block commands:
-  doAssert parseLiveCommand("hello").kind == lcNone
-  doAssert parseLiveCommand("/new").kind == lcNew
-  doAssert parseLiveCommand("/new plan a trip").text == "plan a trip"
-  doAssert parseLiveCommand("/debug").kind == lcDebug
+  doAssert isNewCommand("/new")
+  doAssert isNewCommand(" /NEW ")
+  doAssert not isNewCommand("hello")
+  doAssert not isNewCommand("/new plan a trip")
+  doAssert not isNewCommand("/help")
 
 block introDoc:
   let doc = introUiDoc()

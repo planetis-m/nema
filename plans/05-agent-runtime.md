@@ -13,7 +13,7 @@ This plan should be completed after the local demo works.
 - `deps/openai/README.md`
 - `deps/openai/examples/live_batch_chat_polling.nim`
 - `deps/openai/examples/live_tool_calling_llama.nim`
-- `prompts/ui-subagent-system.md`
+- `src/adaptive_ui/agent.nim`
 
 ## Tasks
 

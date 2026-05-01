@@ -53,8 +53,7 @@ To use a different endpoint, edit `apiUrl` in `adaptive_ui.json`. Leave
 
 ## Commands
 
-- `/new [text]`: reset the session and optionally submit text.
-- `/debug`: show recent failed UI responses.
+- `/new`: reset the session.
 - Anything else: submit text to the adaptive session.
 
 ## Design
