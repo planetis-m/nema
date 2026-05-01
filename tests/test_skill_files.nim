@@ -35,8 +35,3 @@ block summary:
   doAssert "- math-tutor: Explain math problems one step at a time." in text
   doAssert "- plain" in text
   doAssert "SKILL.md" notin text
-
-block summaryLimit:
-  let lib = loadSkills([root])
-  let text = lib.skillSummary(1)
-  doAssert text.count('\n') == 0

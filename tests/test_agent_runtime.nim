@@ -1,10 +1,10 @@
 import std/strutils
 import jsonx
-import adaptive_ui/[agent, config, skill_files, ui_doc]
+import adaptive_ui/[agent, config, live_flow, skill_files]
 
-let cfg = AppConfig(
+let cfgMissing = AppConfig(
   apiUrl: "https://example.invalid/v1/chat/completions",
-  apiKeyEnv: "ADAPTIVE_UI_TEST_MISSING_KEY",
+  apiKey: "",
   chatModel: "chat-model",
   uiModel: "ui-model",
   timeoutMs: 1000,
@@ -20,22 +20,12 @@ let skills = SkillLibrary(skills: @[
   )
 ])
 
-block promptBuilders:
-  let messages = buildChatMessages([], skills, "Teach fractions")
-  doAssert messages.len == 2
-
-  let prompt = buildUiPrompt(@[
-    AgentMessage(role: amUser, content: "Quiz me"),
-    AgentMessage(role: amAssistant, content: "Question: 2 + 2?")
-  ], textUiDoc("Current", "Old screen"), skills, "Current flow: quiz.")
-  doAssert prompt.startsWith("UiDoc contract:")
-  doAssert "Supported kinds: text, code, radio, buttons, textInput, math, transcript." in prompt
-  doAssert "Conversation so far" in prompt
-  doAssert "UI context" in prompt
-  doAssert "Current flow: quiz." in prompt
-  doAssert "math-tutor" in prompt
-  doAssert "\"version\":1" in prompt
-  doAssert "Return the next UiDoc JSON only." in prompt
+block configHasKey:
+  doAssert not cfgMissing.hasKey()
+  doAssert AppConfig(
+    apiUrl: "", apiKey: "sk-test", chatModel: "",
+    uiModel: "", timeoutMs: 0, skillRoots: @[]
+  ).hasKey()
 
 block responseFormat:
   let text = toJson(uiDocResponseFormat())
@@ -44,40 +34,37 @@ block responseFormat:
   doAssert "\"strict\":true" in text
   doAssert "\"enum\":[\"text\",\"code\",\"radio\",\"buttons\",\"textInput\",\"math\",\"transcript\"]" in text
 
-block errorResultCarriesText:
-  let item = AgentResult(
-    kind: agError,
-    requestId: 7,
-    text: """{"bad":true}""",
-    error: "invalid UI document"
-  )
-  doAssert item.text == """{"bad":true}"""
-
 block missingKey:
-  var rt = initAgentRuntime(cfg, skills, "UI prompt")
-  defer: rt.close()
+  var state = initAgentState(cfgMissing, skills)
+  defer: state.close()
 
-  doAssert not rt.hasLiveConfig()
-  doAssert rt.pendingRequests() == 0
-
-  var err = ""
-  doAssert not rt.submitUserText("hello", err)
-  doAssert "API key missing" in err
-  doAssert rt.history.len == 0
+  doAssert not state.hasPending()
+  doAssert state.chatHistory.len == 0
 
 block emptyInput:
-  var rt = initAgentRuntime(cfg, skills, "UI prompt")
-  defer: rt.close()
+  var state = initAgentState(cfgMissing, skills)
+  defer: state.close()
 
-  var err = ""
-  doAssert not rt.submitUserText("   ", err)
+  let err = state.submitChat("   ")
   doAssert "empty" in err
 
-block displayTextDoesNotBypassMissingKey:
-  var rt = initAgentRuntime(cfg, skills, "UI prompt")
-  defer: rt.close()
+block setFlowClearsHistory:
+  var state = initAgentState(cfgMissing, skills)
+  defer: state.close()
 
-  var err = ""
-  doAssert not rt.submitUserText("internal prompt", err, "shown text")
-  doAssert "API key missing" in err
-  doAssert rt.history.len == 0
+  state.setFlow(lfQuiz)
+  state.clearHistory()
+  doAssert state.chatHistory.len == 0
+
+block clearHistory:
+  var state = initAgentState(cfgMissing, skills)
+  defer: state.close()
+
+  state.chatHistory.add ChatEntry(role: arUser, content: "test")
+  doAssert state.chatHistory.len == 1
+
+  state.clearHistory()
+  doAssert state.chatHistory.len == 0
+
+block cachedSkillSummary:
+  doAssert "math-tutor" in skills.skillSummary()

@@ -20,7 +20,7 @@ block bounded:
   doAssert "first" notin log.debugText()
 
 block defaultLimit:
-  var log = initDebugLog(maxEntries = 0)
+  var log = initDebugLog()
   log.addDebug("entry")
   doAssert log.maxEntries == 20
   doAssert log.entries == @["entry"]

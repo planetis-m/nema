@@ -3,23 +3,23 @@ import ./[agent, ui_doc]
 
 proc roleLabel(role: AgentRole): string =
   case role
-  of amUser:
+  of arUser:
     "User"
-  of amAssistant:
+  of arAssistant:
     "Assistant"
 
-proc formatTranscript*(history: openArray[AgentMessage]): string =
+proc formatTranscript*(history: openArray[ChatEntry]): string =
   if history.len == 0:
     return "No messages yet."
 
-  for msg in history:
+  for entry in history:
     if result.len > 0:
       result.add "\n\n"
-    result.add roleLabel(msg.role)
+    result.add roleLabel(entry.role)
     result.add ":\n"
-    result.add msg.content.strip()
+    result.add entry.content.strip()
 
-proc transcriptUiDoc*(history: openArray[AgentMessage];
+proc transcriptUiDoc*(history: openArray[ChatEntry];
     title = "Transcript"): UiDoc =
   UiDoc(
     version: 1,

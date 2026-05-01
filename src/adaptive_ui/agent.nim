@@ -1,71 +1,122 @@
-import std/[os, strutils, tables]
+import std/[random, strutils, times]
 import jsonx
 import relay
 import openai/chat
-import ./[config, skill_files, ui_doc, ui_parse]
+import openai/retry
+import ./[config, live_flow, skill_files, ui_doc, ui_parse]
 
 {.passL: "-lcurl".}
 
 const
-  UiContractPrompt = """
-UiDoc contract:
-- Return JSON only.
-- version must be 1.
-- layout must be a uirelays markdown table.
-- Every area name must exist in layout.
-- Supported kinds: text, code, radio, buttons, textInput, math, transcript.
-- radio/buttons require id and non-empty options.
-- textInput requires id and may use placeholder and submitLabel.
-"""
+  ChatBasePrompt* = "You are the chat agent for an adaptive desktop app. " &
+    "Answer the user plainly. " &
+    "When a learning, quiz, essay, or decision flow is active, keep enough task state " &
+    "in your response for a separate UI subagent to render the next screen. " &
+    "When the input describes UI values, clicked buttons, selected options, or " &
+    "submitted text, treat that as the user's interaction with the current generated UI."
 
-  DefaultUiSystemPrompt = """
-You are the UI subagent for a Nim desktop app. Return only one valid UiDoc JSON
-object. Use only supported area kinds and keep the layout compact.
-"""
+  FlowPrompts: array[LiveFlowKind, string] = [
+    lfAdaptive: "Adaptive task mode. " &
+      "Help with the user's task directly. The task can be notes, planning, coding, " &
+      "math, forms, decisions, study, games, or normal chat. " &
+      "Keep enough visible task state in the response for the UI subagent to choose " &
+      "an appropriate supported interface. " &
+      "Do not force the task into a quiz or essay unless the user asks for that.",
+    lfChat: "Normal chat mode. " &
+      "Answer conversationally. The UI subagent should usually render this as a " &
+      "transcript or simple text.",
+    lfQuiz: "Live quiz mode. " &
+      "Create or continue a quiz one question at a time. " &
+      "Track score and correct answers in the conversation. " &
+      "When asking a question, include enough structured detail for the UI subagent " &
+      "to render a radio group and submit button. " &
+      "When the input describes a selected option or clicked submit button, treat " &
+      "the current UI values as the user's answer. " &
+      "When grading an answer, compare both the option id and visible label, explain " &
+      "briefly, and then move to the next question or final score.",
+    lfEssay: "Live essay mode. " &
+      "Create or continue an essay practice flow. " &
+      "When starting, provide one essay prompt and a short rubric. " &
+      "When the input describes submitted text, treat that text as the user's essay answer. " &
+      "When the user submits an answer, grade it against the rubric and provide concise feedback. " &
+      "Include enough task state for the UI subagent to render either a text input or feedback screen."
+  ]
 
-  ChatSystemPrompt = """
-You are the chat agent for an adaptive Nim desktop app. Answer the user plainly.
-When a learning, quiz, essay, or decision flow is active, keep enough task state
-in your response for a separate UI subagent to render the next screen.
-"""
+  UiBasePrompt = "You are the UI subagent for a Nim desktop app. " &
+    "Return only one valid UiDoc JSON object. " &
+    "Use only supported area kinds and keep the layout compact.\n\n" &
+    "UiDoc contract:\n" &
+    "- Return JSON only.\n" &
+    "- version must be 1.\n" &
+    "- layout must be a uirelays markdown table.\n" &
+    "- Every area name must exist in layout.\n" &
+    "- Supported kinds: text, code, radio, buttons, textInput, math, transcript.\n" &
+    "- radio/buttons require id and non-empty options.\n" &
+    "- textInput requires id and may use placeholder and submitLabel."
+
+  UiFlowHints: array[LiveFlowKind, string] = [
+    lfAdaptive: "Current flow: adaptive task. Choose the smallest supported UI that " &
+      "fits the task: text, transcript, code, math, radio/buttons for decisions, " &
+      "textInput for open responses. Do not default to quiz or essay unless requested.",
+    lfChat: "Current flow: normal chat. Prefer transcript or text unless the response " &
+      "clearly asks for interactive controls.",
+    lfQuiz: "Current flow: quiz. Prefer one radio area for answer choices and one " &
+      "buttons area for submit/next/finish actions. Keep option ids stable between turns.",
+    lfEssay: "Current flow: essay. Prefer one prompt area, one textInput area for " &
+      "the answer, and one buttons area for submit actions. Use submitLabel on textInput " &
+      "when the input should submit directly."
+  ]
+
+  MaxRetries = 3
 
 type
   AgentRole* = enum
-    amUser,
-    amAssistant
+    arUser,
+    arAssistant
 
-  AgentMessage* = object
+  ChatEntry* = object
     role*: AgentRole
     content*: string
 
-  AgentRequestKind* = enum
-    arChat,
-    arUi
+  RequestKind = enum
+    rkChat,
+    rkUi
 
-  AgentResultKind* = enum
-    agNone,
-    agChatText,
-    agUiDoc,
-    agError
+  ResultKind* = enum
+    resNone,
+    resChatText,
+    resUiDoc,
+    resError
 
   AgentResult* = object
-    kind*: AgentResultKind
-    requestId*: int64
+    kind*: ResultKind
     text*: string
     doc*: UiDoc
     error*: string
 
-  AgentRuntime* = object
-    cfg*: AppConfig
-    skills*: SkillLibrary
-    history*: seq[AgentMessage]
-    lastStatus*: string
-    uiSystemPrompt*: string
-    endpoint: OpenAIConfig
-    client: Relay
-    nextRequestId: int64
-    pending: Table[int64, AgentRequestKind]
+  PendingRequest = object
+    requestId: int64
+    kind: RequestKind
+    savedMessages: seq[ChatMessage]
+    model: string
+    maxTokens: int
+    responseFormat: ResponseFormat
+    attempt: int
 
+  AgentState* = object
+    client*: Relay
+    endpoint: OpenAIConfig
+    cfg*: AppConfig
+    chatMessages: seq[ChatMessage]
+    chatHistory*: seq[ChatEntry]
+    uiSystemMsg: ChatMessage
+    uiFormat: ResponseFormat
+    skillSummary: string
+    pending: seq[PendingRequest]
+    nextId: int64
+    rng: Rand
+
+type
   SchemaProp = object
     `type`: string
     description: string
@@ -151,13 +202,7 @@ proc uiAreaSchema(): UiAreaSchema =
     properties: (
       name: schemaProp("string", "Layout cell name."),
       kind: schemaEnumProp("string", "One supported UiKind string.", [
-        "text",
-        "code",
-        "radio",
-        "buttons",
-        "textInput",
-        "math",
-        "transcript"
+        "text", "code", "radio", "buttons", "textInput", "math", "transcript"
       ]),
       text: schemaProp("string", "Markdown-like text content."),
       id: schemaProp("string", "Stable component id for interactive areas."),
@@ -195,123 +240,77 @@ proc uiDocSchema(): UiDocSchema =
 proc uiDocResponseFormat*(): ResponseFormat =
   formatJsonSchema("ui_doc", uiDocSchema(), strict = true)
 
-proc loadUiSystemPrompt*(path = "prompts/ui-subagent-system.md"): string =
-  if fileExists(path):
-    result = readFile(path)
-  else:
-    result = DefaultUiSystemPrompt
-
-proc initAgentRuntime*(cfg: AppConfig; skills = SkillLibrary();
-    uiSystemPrompt = loadUiSystemPrompt()): AgentRuntime =
-  result.cfg = cfg
-  result.skills = skills
-  result.uiSystemPrompt = uiSystemPrompt
-  result.endpoint = OpenAIConfig(
-    url: cfg.apiUrl,
-    apiKey: getEnv(cfg.apiKeyEnv)
+proc initAgentState*(cfg: AppConfig; skills = SkillLibrary()): AgentState =
+  result = AgentState(
+    cfg: cfg,
+    endpoint: OpenAIConfig(
+      url: cfg.apiUrl,
+      apiKey: cfg.apiKey
+    ),
+    client: newRelay(
+      maxInFlight = 2,
+      defaultTimeoutMs = cfg.timeoutMs,
+      maxRedirects = 5
+    ),
+    chatMessages: @[systemMessageText(ChatBasePrompt)],
+    uiSystemMsg: systemMessageText(UiBasePrompt & "\n\n" & UiFlowHints[lfAdaptive]),
+    uiFormat: uiDocResponseFormat(),
+    skillSummary: skills.skillSummary(),
+    nextId: 1,
+    rng: initRand(epochTime().int64)
   )
-  result.client = newRelay(
-    maxInFlight = 2,
-    defaultTimeoutMs = cfg.timeoutMs,
-    maxRedirects = 5
-  )
-  result.nextRequestId = 1
-  result.pending = initTable[int64, AgentRequestKind]()
-  if result.endpoint.apiKey.len == 0:
-    result.lastStatus = "API key missing in " & cfg.apiKeyEnv
+
+proc close*(state: var AgentState) =
+  if state.client != nil:
+    state.client.close()
+    state.client = nil
+
+proc hasPending*(state: AgentState): bool =
+  state.pending.len > 0 or state.client.hasRequests()
+
+proc setFlow*(state: var AgentState; kind: LiveFlowKind) =
+  let sysText = ChatBasePrompt & "\n\n" & FlowPrompts[kind]
+  if state.chatMessages.len > 0 and state.chatMessages[0].role == ChatMessageRole.system:
+    state.chatMessages[0] = systemMessageText(sysText)
   else:
-    result.lastStatus = "Agent runtime ready"
+    state.chatMessages.insert(systemMessageText(sysText), 0)
+  let uiSysText = UiBasePrompt & "\n\n" & UiFlowHints[kind]
+  state.uiSystemMsg = systemMessageText(uiSysText)
 
-proc close*(rt: var AgentRuntime) =
-  if rt.client != nil:
-    rt.client.close()
-    rt.client = nil
+proc clearHistory*(state: var AgentState) =
+  let sysMsg = if state.chatMessages.len > 0: state.chatMessages[0]
+               else: systemMessageText(ChatBasePrompt)
+  state.chatMessages = @[sysMsg]
+  state.chatHistory.setLen(0)
 
-proc hasLiveConfig*(rt: AgentRuntime): bool =
-  rt.endpoint.apiKey.len > 0
-
-proc buildChatSystemPrompt*(skills: SkillLibrary): string =
-  result = ChatSystemPrompt.strip()
-  let summary = skills.skillSummary()
-  if summary.len > 0:
-    result.add "\n\nAvailable SKILL files:\n"
-    result.add summary
-
-proc roleName(role: AgentRole): string =
-  case role
-  of amUser:
-    "user"
-  of amAssistant:
-    "assistant"
-
-proc toChatMessage(msg: AgentMessage): ChatMessage =
-  case msg.role
-  of amUser:
-    userMessageText(msg.content)
-  of amAssistant:
-    assistantMessageText(msg.content)
-
-proc buildChatMessages*(history: openArray[AgentMessage]; skills: SkillLibrary;
-    userText: string): seq[ChatMessage] =
-  result.add systemMessageText(buildChatSystemPrompt(skills))
-  for msg in history:
-    result.add toChatMessage(msg)
-  result.add userMessageText(userText)
-
-proc buildUiPrompt*(history: openArray[AgentMessage]; currentDoc: UiDoc;
-    skills: SkillLibrary; uiHint = ""): string =
-  result = UiContractPrompt.strip()
-  result.add "\n\nConversation so far:\n"
-  if history.len == 0:
+proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc;
+    skillSummary: string): string =
+  result = "Conversation so far:\n"
+  if chatHistory.len == 0:
     result.add "(empty)\n"
   else:
-    for msg in history:
+    for entry in chatHistory:
       result.add "- "
-      result.add roleName(msg.role)
+      result.add if entry.role == arUser: "User" else: "Assistant"
       result.add ": "
-      result.add msg.content
+      result.add entry.content.strip()
       result.add "\n"
-
-  if uiHint.strip().len > 0:
-    result.add "\nUI context:\n"
-    result.add uiHint.strip()
-    result.add "\n"
-
-  let summary = skills.skillSummary()
-  if summary.len > 0:
-    result.add "\nAvailable SKILL files:\n"
-    result.add summary
-    result.add "\n"
-
   result.add "\nCurrent UiDoc JSON:\n"
   result.add toJson(currentDoc)
   result.add "\n\nReturn the next UiDoc JSON only."
 
-proc nextId(rt: var AgentRuntime): int64 =
-  result = rt.nextRequestId
-  inc rt.nextRequestId
+template chatModel(state: AgentState): string = state.cfg.chatModel
+template uiModel(state: AgentState): string = state.cfg.uiModel
 
-proc fail(err: var string; message: string): bool =
-  err = message
-  result = false
-
-proc ensureCanRequest(rt: AgentRuntime; err: var string): bool =
-  if rt.client == nil:
-    result = fail(err, "agent runtime is closed")
-  elif not rt.hasLiveConfig():
-    result = fail(err, "API key missing in " & rt.cfg.apiKeyEnv)
-  else:
-    err = ""
-    result = true
-
-proc enqueue(rt: var AgentRuntime; kind: AgentRequestKind;
-    messages: seq[ChatMessage]; model: string; maxTokens: int;
-    responseFormat: ResponseFormat): int64 =
-  result = rt.nextId()
+proc enqueue(state: var AgentState; kind: RequestKind;
+    messages: seq[ChatMessage]; model: string;
+    maxTokens: int; responseFormat: ResponseFormat): int64 =
+  result = state.nextId
+  inc state.nextId
   var batch: RequestBatch
   chatAdd(
     batch = batch,
-    cfg = rt.endpoint,
+    cfg = state.endpoint,
     params = chatCreate(
       model = model,
       messages = messages,
@@ -321,131 +320,124 @@ proc enqueue(rt: var AgentRuntime; kind: AgentRequestKind;
       responseFormat = responseFormat
     ),
     requestId = result,
-    timeoutMs = rt.cfg.timeoutMs
+    timeoutMs = state.cfg.timeoutMs
   )
-  rt.client.startRequests(batch)
-  rt.pending[result] = kind
-
-proc submitUserText*(rt: var AgentRuntime; text: string; err: var string;
-    displayText = ""): bool =
-  let userText = text.strip()
-  if userText.len == 0:
-    return fail(err, "input is empty")
-  if not rt.ensureCanRequest(err):
-    return false
-
-  let historyText =
-    if displayText.strip().len > 0: displayText.strip()
-    else: userText
-
-  let requestId = rt.enqueue(
-    kind = arChat,
-    messages = buildChatMessages(rt.history, rt.skills, userText),
-    model = rt.cfg.chatModel,
-    maxTokens = 800,
-    responseFormat = formatText
+  state.client.startRequests(batch)
+  state.pending.add PendingRequest(
+    requestId: result,
+    kind: kind,
+    savedMessages: messages,
+    model: model,
+    maxTokens: maxTokens,
+    responseFormat: responseFormat,
+    attempt: 1
   )
-  rt.history.add AgentMessage(role: amUser, content: historyText)
-  rt.lastStatus = "queued chat request " & $requestId
-  err = ""
-  result = true
 
-proc enqueueUiDoc*(rt: var AgentRuntime; currentDoc: UiDoc;
-    err: var string; uiHint = ""): bool =
-  if not rt.ensureCanRequest(err):
-    return false
+proc submitChat*(state: var AgentState; userText: string): string =
+  let text = userText.strip()
+  if text.len == 0:
+    return "input is empty"
+  if state.client == nil:
+    return "agent is closed"
 
-  let requestId = rt.enqueue(
-    kind = arUi,
-    messages = @[
-      systemMessageText(rt.uiSystemPrompt),
-      userMessageText(buildUiPrompt(rt.history, currentDoc, rt.skills, uiHint))
-    ],
-    model = rt.cfg.uiModel,
-    maxTokens = 1200,
-    responseFormat = uiDocResponseFormat()
-  )
-  rt.lastStatus = "queued UI request " & $requestId
-  err = ""
-  result = true
+  state.chatMessages.add userMessageText(text)
+  state.chatHistory.add ChatEntry(role: arUser, content: text)
+  discard state.enqueue(rkChat, state.chatMessages, state.chatModel,
+    800, formatText)
+  result = ""
 
-proc parseChatText(item: RequestResult; text, err: var string): bool =
+proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
+  if state.client == nil:
+    return "agent is closed"
+
+  var msgs: seq[ChatMessage]
+  msgs.add state.uiSystemMsg
+  if state.skillSummary.len > 0:
+    msgs.add userMessageText(
+      "Available skill files:\n" & state.skillSummary & "\n\n" &
+      formatUiUserMsg(state.chatHistory, currentDoc, state.skillSummary))
+  else:
+    msgs.add userMessageText(
+      formatUiUserMsg(state.chatHistory, currentDoc, state.skillSummary))
+  discard state.enqueue(rkUi, msgs, state.uiModel, 1200,
+    state.uiFormat)
+  result = ""
+
+proc findByRequestId(state: AgentState; requestId: int64): int =
+  for i, p in state.pending:
+    if p.requestId == requestId:
+      return i
+  result = -1
+
+proc parseResponse(item: RequestResult; kind: RequestKind):
+    tuple[ok: bool, text: string, err: string] =
+  if item.error.kind != teNone:
+    return (false, "", $item.error.kind & ": " & item.error.message)
+  if not isHttpSuccess(item.response.code):
+    return (false, item.response.body,
+      "HTTP " & $item.response.code & ": " & item.response.body)
   var parsed: ChatCreateResult
   if not chatParse(item.response.body, parsed):
-    return fail(err, "failed to parse chat response")
-
+    return (false, "", "failed to parse response")
   try:
-    text = $parsed.firstText()
-    err = ""
-    result = true
+    result = (true, $parsed.firstText(), "")
   except CatchableError as e:
-    result = fail(err, e.msg)
+    result = (false, "", e.msg)
 
-proc failResult(requestId: int64; message: string; text = ""): AgentResult =
-  AgentResult(kind: agError, requestId: requestId, error: message, text: text)
-
-proc parseResult(rt: var AgentRuntime; item: RequestResult;
-    kind: AgentRequestKind): AgentResult =
-  let requestId = item.response.request.requestId
-  result.requestId = requestId
-
+proc isRetriable(item: RequestResult): bool =
   if item.error.kind != teNone:
-    return failResult(requestId, $item.error.kind & ": " & item.error.message)
-  if not isHttpSuccess(item.response.code):
-    return failResult(requestId, "HTTP " & $item.response.code & ": " &
-      item.response.body, item.response.body)
+    return isRetriableTransport(item.error.kind)
+  return isRetriableStatus(item.response.code)
 
-  var text = ""
-  var err = ""
-  if not parseChatText(item, text, err):
-    return failResult(requestId, err)
+proc retryRequest(state: var AgentState; pending: PendingRequest): bool =
+  if pending.attempt >= MaxRetries:
+    return false
+  let nextAttempt = pending.attempt + 1
+  discard state.enqueue(pending.kind, pending.savedMessages, pending.model,
+    pending.maxTokens, pending.responseFormat)
+  state.pending[^1].attempt = nextAttempt
+  result = true
 
-  case kind
-  of arChat:
-    rt.history.add AgentMessage(role: amAssistant, content: text)
-    result = AgentResult(
-      kind: agChatText,
-      requestId: requestId,
-      text: text
-    )
-  of arUi:
-    var doc: UiDoc
-    if parseUiDoc(text, doc, err):
-      result = AgentResult(
-        kind: agUiDoc,
-        requestId: requestId,
-        text: text,
-        doc: doc
-      )
-    else:
-      result = failResult(requestId, "invalid UI document: " & err, text)
-
-proc pollAgent*(rt: var AgentRuntime; outResult: var AgentResult): bool =
-  if rt.client == nil:
+proc poll*(state: var AgentState; outResult: var AgentResult): bool =
+  if state.client == nil:
     return false
 
   var item: RequestResult
-  if rt.client.pollForResult(item):
+  if state.client.pollForResult(item):
     let requestId = item.response.request.requestId
-    if rt.pending.hasKey(requestId):
-      let kind = rt.pending[requestId]
-      rt.pending.del requestId
-      outResult = rt.parseResult(item, kind)
-    else:
-      outResult = failResult(requestId, "unknown request id")
+    let idx = state.findByRequestId(requestId)
+    if idx < 0:
+      outResult = AgentResult(kind: resError, error: "unknown request id")
+      return true
 
-    case outResult.kind
-    of agError:
-      rt.lastStatus = outResult.error
-    of agChatText:
-      rt.lastStatus = "chat response received"
-    of agUiDoc:
-      rt.lastStatus = "UI document received"
-    of agNone:
-      discard
-    result = true
-  else:
-    result = false
+    let pending = state.pending[idx]
+    state.pending.del idx
 
-proc pendingRequests*(rt: AgentRuntime): int =
-  rt.pending.len
+    let (ok, text, err) = parseResponse(item, pending.kind)
+    if not ok:
+      if isRetriable(item) and state.retryRequest(pending):
+        outResult = AgentResult(kind: resError,
+          error: "retrying (" & $pending.attempt & "/" & $MaxRetries & "): " & err,
+          text: text)
+        return true
+      outResult = AgentResult(kind: resError, error: err, text: text)
+      return true
+
+    case pending.kind
+    of rkChat:
+      state.chatMessages.add assistantMessageText(text)
+      state.chatHistory.add ChatEntry(role: arAssistant, content: text)
+      outResult = AgentResult(kind: resChatText, text: text)
+    of rkUi:
+      var doc: UiDoc
+      var parseErr = ""
+      if parseUiDoc(text, doc, parseErr):
+        outResult = AgentResult(kind: resUiDoc, text: text, doc: doc)
+      else:
+        outResult = AgentResult(kind: resError,
+          error: "invalid UI document: " & parseErr, text: text)
+    return true
+
+  return false
+
+

@@ -27,15 +27,17 @@ type
     theme: Theme
 
 proc initDemoState(width, height: int; font: Font; theme: Theme): DemoState =
-  result.width = width
-  result.height = height
-  result.outerLayout = parseLayout(OuterLayoutSpec)
-  result.rt = initUiRuntime()
-  result.input = createSynEdit(font, theme)
+  result = DemoState(
+    width: width,
+    height: height,
+    outerLayout: parseLayout(OuterLayoutSpec),
+    rt: initUiRuntime(),
+    input: createSynEdit(font, theme),
+    focus: fAdaptive,
+    learning: initLearningState(),
+    theme: theme
+  )
   result.input.lang = langNone
-  result.focus = fAdaptive
-  result.learning = initLearningState()
-  result.theme = theme
 
 proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
   let bg = theme.scrollTrackColor

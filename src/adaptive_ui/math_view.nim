@@ -1,10 +1,5 @@
 import std/strutils
 
-proc replaceAll(text: string; pairs: openArray[(string, string)]): string =
-  result = text
-  for pair in pairs:
-    result = result.replace(pair[0], pair[1])
-
 proc readGroup(text: string; pos: var int): string =
   if pos >= text.len or text[pos] != '{':
     return ""
@@ -55,7 +50,7 @@ proc stripMathDelimiters(line: string): string =
 proc formatMathLine*(line: string): string =
   result = stripMathDelimiters(line)
   result = rewriteFrac(result)
-  result = result.replaceAll([
+  result = result.multiReplace([
     ("\\times", "*"),
     ("\\cdot", "*"),
     ("\\div", "/"),

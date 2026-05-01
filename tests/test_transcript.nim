@@ -6,8 +6,8 @@ block empty:
 
 block format:
   let history = @[
-    AgentMessage(role: amUser, content: " Make a quiz. "),
-    AgentMessage(role: amAssistant, content: "Question 1")
+    ChatEntry(role: arUser, content: " Make a quiz. "),
+    ChatEntry(role: arAssistant, content: "Question 1")
   ]
   let text = formatTranscript(history)
   doAssert text.startsWith("User:\nMake a quiz.")
@@ -15,7 +15,7 @@ block format:
 
 block uiDoc:
   let doc = transcriptUiDoc(@[
-    AgentMessage(role: amUser, content: "hello")
+    ChatEntry(role: arUser, content: "hello")
   ])
   doAssert doc.version == 1
   doAssert doc.title == "Transcript"

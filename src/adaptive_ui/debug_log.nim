@@ -12,8 +12,6 @@ proc addDebug*(log: var DebugLog; text: string) =
   if text.len == 0:
     return
 
-  if log.maxEntries <= 0:
-    log.maxEntries = 20
   log.entries.add text
   while log.entries.len > log.maxEntries:
     log.entries.delete(0)

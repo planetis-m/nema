@@ -81,7 +81,8 @@ proc hasSkill*(lib: SkillLibrary; name: string): bool =
   var skill: SkillInfo
   result = lib.findSkill(name, skill)
 
-proc skillSummary*(lib: SkillLibrary; maxSkills = 50): string =
+proc skillSummary*(lib: SkillLibrary): string =
+  const maxSkills = 50
   let limit = min(maxSkills, lib.skills.len)
   for i in 0 ..< limit:
     let skill = lib.skills[i]

@@ -11,7 +11,7 @@ const
 proc noUiEvent(): UiEvent =
   UiEvent(kind: ueNone)
 
-proc inset(r: Rect; pad: int): Rect =
+proc inset*(r: Rect; pad: int): Rect =
   rect(r.x + pad, r.y + pad, max(0, r.w - pad * 2), max(0, r.h - pad * 2))
 
 proc offset(r: Rect; parent: Rect): Rect =
@@ -119,7 +119,6 @@ proc renderRadio(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
   drawBorder(r, theme.scrollTrackColor)
 
   var selected = rt.selectedOption(area)
-  result = noUiEvent()
 
   for i, option in area.options:
     let row = optionRect(r, fm, i)
@@ -158,7 +157,6 @@ proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font;
     theme: Theme): UiEvent =
   fillRect(r, theme.bg)
   drawBorder(r, theme.scrollTrackColor)
-  result = noUiEvent()
 
   var x = r.x + Pad
   for option in area.options:
@@ -279,14 +277,12 @@ proc drawEmptyCells(doc: UiDoc; cells: Table[string, Rect]; theme: Theme) =
 
 proc resolveUiDocCells*(doc: UiDoc; rt: var UiRuntime; area: Rect;
     lineHeight: int; renderDoc: var UiDoc): Table[string, Rect] =
-  try:
-    let parsed = parseLayout(doc.layout)
-    result = parsed.resolve(area.w, area.h, lineHeight, gap = 2)
-    if result.len == 0:
-      raise newException(ValueError, "layout produced no cells")
+  let parsed = parseLayout(doc.layout)
+  result = parsed.resolve(area.w, area.h, lineHeight, gap = 2)
+  if result.len > 0:
     renderDoc = doc
-  except CatchableError:
-    rt.status = "layout error: " & getCurrentExceptionMsg()
+  else:
+    rt.status = "layout error: layout produced no cells"
     renderDoc = fallbackUiDoc("The generated UI layout could not be rendered.")
     result = parseLayout(renderDoc.layout).resolve(area.w, area.h, lineHeight, gap = 2)
 

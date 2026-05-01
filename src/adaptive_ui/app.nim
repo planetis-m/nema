@@ -21,12 +21,6 @@ const
 """
 
 type
-  AppMode* = enum
-    appAdaptive,
-    appChat,
-    appQuiz,
-    appEssay
-
   AppFocus = enum
     afAdaptive,
     afInput
@@ -37,65 +31,45 @@ type
     rt: UiRuntime
     input: SynEdit
     focus: AppFocus
-    mode: AppMode
+    flow: LiveFlowKind
     doc: UiDoc
     debugLog: DebugLog
     status: string
     theme: Theme
-    agent: AgentRuntime
-    agentReady: bool
+    agent: AgentState
 
 proc initAppState(width, height: int; font: Font; theme: Theme;
     cfg: AppConfig; skills: SkillLibrary; status = ""): AppState =
-  result.width = width
-  result.height = height
-  result.outerLayout = parseLayout(OuterLayoutSpec)
-  result.rt = initUiRuntime()
-  result.input = createSynEdit(font, theme)
+  let initStatus =
+    if status.len > 0: status
+    elif cfg.hasKey(): "Agent ready"
+    else: "Set OPENAI_API_KEY for generated UI."
+  result = AppState(
+    width: width,
+    height: height,
+    outerLayout: parseLayout(OuterLayoutSpec),
+    rt: initUiRuntime(),
+    input: createSynEdit(font, theme),
+    focus: afAdaptive,
+    flow: lfAdaptive,
+    doc: flowIntroDoc(lfAdaptive),
+    debugLog: initDebugLog(),
+    status: initStatus,
+    theme: theme,
+    agent: initAgentState(cfg, skills)
+  )
   result.input.lang = langNone
-  result.focus = afAdaptive
-  result.mode = appAdaptive
-  result.doc = flowIntroDoc(lfAdaptive)
-  result.debugLog = initDebugLog()
-  result.status = status
-  result.theme = theme
-  result.agent = initAgentRuntime(cfg, skills)
-  result.agentReady = true
-  if result.status.len == 0:
-    result.status = result.agent.lastStatus
 
 proc close(state: var AppState) =
-  if state.agentReady:
-    state.agent.close()
-    state.agentReady = false
+  state.agent.close()
 
 proc currentStatus(state: AppState): string =
   if state.status.len > 0:
     result = state.status
+  elif state.agent.hasPending():
+    result = "Waiting for response..."
   else:
-    result = state.agent.lastStatus
-
-proc flowKind(mode: AppMode): LiveFlowKind =
-  case mode
-  of appAdaptive:
-    lfAdaptive
-  of appChat:
-    lfChat
-  of appQuiz:
-    lfQuiz
-  of appEssay:
-    lfEssay
-
-proc toAppMode(kind: LiveFlowKind): AppMode =
-  case kind
-  of lfAdaptive:
-    appAdaptive
-  of lfChat:
-    appChat
-  of lfQuiz:
-    appQuiz
-  of lfEssay:
-    appEssay
+    result = ""
 
 proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
   result = e
@@ -108,26 +82,19 @@ proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
     result = default Event
 
 proc submitText(state: var AppState; text: string) =
-  if not state.agentReady:
-    state.status = "Agent runtime is not available"
-    return
-  if state.agent.pendingRequests() > 0:
-    state.status = "Waiting for the current agent request"
-    return
-
-  var err = ""
-  let prompt = flowPrompt(state.mode.flowKind(), text)
-  if state.agent.submitUserText(prompt, err, text):
-    state.status = state.agent.lastStatus
-    state.doc = transcriptUiDoc(state.agent.history, "Waiting")
-  else:
+  let err = state.agent.submitChat(text)
+  if err.len > 0:
     state.status = err
+  else:
+    state.status = ""
 
 proc switchFlow(state: var AppState; kind: LiveFlowKind; text: string) =
-  state.mode = toAppMode(kind)
+  state.flow = kind
   state.rt = initUiRuntime()
-  state.status = flowTitle(kind) & " mode"
+  state.agent.clearHistory()
+  state.agent.setFlow(kind)
   state.doc = flowIntroDoc(kind)
+  state.status = flowTitle(kind) & " mode"
   if text.strip().len > 0:
     state.submitText(text)
 
@@ -166,39 +133,31 @@ proc handleUiEvent(state: var AppState; ev: UiEvent) =
       state.submitText(uiEventText(state.doc, state.rt, ev))
 
 proc pollAgent(state: var AppState) =
-  if not state.agentReady:
-    return
-
-  var item: AgentResult
-  while state.agent.pollAgent(item):
-    case item.kind
-    of agNone:
+  var res: AgentResult
+  while state.agent.poll(res):
+    case res.kind
+    of resNone:
       discard
-    of agError:
-      state.status = item.error
-      if item.text.len > 0:
-        state.debugLog.addDebug(item.text)
+    of resError:
+      state.status = res.error
+      if res.text.len > 0:
+        state.debugLog.addDebug(res.text)
       if state.doc.areas.len == 0:
-        state.doc = textUiDoc("Agent Error", item.error)
-    of agChatText:
-      state.doc = transcriptUiDoc(state.agent.history)
-      var err = ""
-      if state.agent.enqueueUiDoc(
-          state.doc, err, uiFlowHint(state.mode.flowKind())):
-        state.status = state.agent.lastStatus
-      else:
+        state.doc = textUiDoc("Agent Error", res.error)
+    of resChatText:
+      let err = state.agent.enqueueUi(state.doc)
+      if err.len > 0:
         state.status = err
-    of agUiDoc:
-      state.doc = item.doc
-      state.status = state.agent.lastStatus
+      else:
+        state.status = ""
+    of resUiDoc:
+      state.doc = res.doc
+      state.status = ""
 
 proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
   let bg = theme.scrollTrackColor
   fillRect(r, bg)
   discard drawText(font, r.x + 8, r.y + 5, text, theme.fg[TokenClass.Text], bg)
-
-proc insetRect(r: Rect; pad: int): Rect =
-  rect(r.x + pad, r.y + pad, max(0, r.w - pad * 2), max(0, r.h - pad * 2))
 
 proc readAppConfig(path: string; status: var string): AppConfig =
   var err = ""
@@ -232,9 +191,6 @@ proc runApp*(configPath = "adaptive_ui.json";
     skills,
     status
   )
-  if not state.agent.hasLiveConfig():
-    state.status = state.agent.lastStatus & ". Set OPENAI_API_KEY for generated UI."
-    state.doc = flowIntroDoc(lfAdaptive)
 
   var running = true
   while running:
@@ -275,7 +231,7 @@ proc runApp*(configPath = "adaptive_ui.json";
     let inputSourceEvent = if state.focus == afInput: e else: default Event
     let inputDrawEvent = state.inputEvent(inputSourceEvent, submitted)
     fillRect(cells["input"], state.theme.bg)
-    discard state.input.draw(inputDrawEvent, cells["input"].insetRect(8),
+    discard state.input.draw(inputDrawEvent, cells["input"].inset(8),
       state.focus == afInput)
     state.handleSubmittedInput(submitted)
 
