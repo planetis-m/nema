@@ -1,11 +1,13 @@
 .codex
 deps/*
+src/adaptive_ui.out
 examples/min_window
 examples/learning_demo
 examples/adaptive_gallery
 examples/adaptive_app
 tests/test_ui_doc_parse
 tests/test_control_events
+tests/test_debug_log
 tests/test_learning_flow
 tests/test_ui_render_state
 tests/test_config

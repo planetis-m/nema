@@ -2,6 +2,7 @@ import adaptive_ui/agent
 import adaptive_ui/app
 import adaptive_ui/components
 import adaptive_ui/config
+import adaptive_ui/debug_log
 import adaptive_ui/interaction
 import adaptive_ui/learning
 import adaptive_ui/live_flow
@@ -17,6 +18,7 @@ export agent
 export app
 export components
 export config
+export debug_log
 export interaction
 export learning
 export live_flow

@@ -6,8 +6,8 @@ import uirelays/layout
 import widgets/synedit
 import widgets/theme
 import ./[
-  agent, components, config, interaction, learning, live_flow, skill_files,
-  ui_doc, transcript, ui_render
+  agent, components, config, debug_log, interaction, learning, live_flow,
+  skill_files, ui_doc, transcript, ui_render
 ]
 
 const
@@ -40,6 +40,7 @@ type
     mode: AppMode
     learning: LearningState
     liveDoc: UiDoc
+    debugLog: DebugLog
     status: string
     theme: Theme
     agent: AgentRuntime
@@ -98,6 +99,7 @@ proc initAppState(width, height: int; font: Font; theme: Theme; mode: AppMode;
   result.focus = afAdaptive
   result.mode = mode
   result.learning = initLearningState()
+  result.debugLog = initDebugLog()
   result.liveDoc = textUiDoc(
     "Adaptive UI",
     "Ask for study notes, a quiz, an essay prompt, or a normal chat response."
@@ -226,6 +228,8 @@ proc pollLiveAgent(state: var AppState) =
       discard
     of agError:
       state.status = item.error
+      if item.text.len > 0:
+        state.debugLog.addDebug(item.text)
       if state.liveDoc.areas.len == 0:
         state.liveDoc = textUiDoc("Agent Error", item.error)
     of agChatText:

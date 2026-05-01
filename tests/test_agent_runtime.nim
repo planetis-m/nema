@@ -41,6 +41,15 @@ block responseFormat:
   doAssert "\"name\":\"ui_doc\"" in text
   doAssert "\"strict\":true" in text
 
+block errorResultCarriesText:
+  let item = AgentResult(
+    kind: agError,
+    requestId: 7,
+    text: """{"bad":true}""",
+    error: "invalid UI document"
+  )
+  doAssert item.text == """{"bad":true}"""
+
 block missingKey:
   var rt = initAgentRuntime(cfg, skills, "UI prompt")
   defer: rt.close()

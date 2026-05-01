@@ -348,8 +348,8 @@ proc parseChatText(item: RequestResult; text, err: var string): bool =
   except CatchableError as e:
     result = fail(err, e.msg)
 
-proc failResult(requestId: int64; message: string): AgentResult =
-  AgentResult(kind: agError, requestId: requestId, error: message)
+proc failResult(requestId: int64; message: string; text = ""): AgentResult =
+  AgentResult(kind: agError, requestId: requestId, error: message, text: text)
 
 proc parseResult(rt: var AgentRuntime; item: RequestResult;
     kind: AgentRequestKind): AgentResult =
@@ -360,7 +360,7 @@ proc parseResult(rt: var AgentRuntime; item: RequestResult;
     return failResult(requestId, $item.error.kind & ": " & item.error.message)
   if not isHttpSuccess(item.response.code):
     return failResult(requestId, "HTTP " & $item.response.code & ": " &
-      item.response.body)
+      item.response.body, item.response.body)
 
   var text = ""
   var err = ""
@@ -385,7 +385,7 @@ proc parseResult(rt: var AgentRuntime; item: RequestResult;
         doc: doc
       )
     else:
-      result = failResult(requestId, "invalid UI document: " & err)
+      result = failResult(requestId, "invalid UI document: " & err, text)
 
 proc pollAgent*(rt: var AgentRuntime; outResult: var AgentResult): bool =
   if rt.client == nil:
