@@ -1,4 +1,4 @@
-import std/[options, strutils]
+import std/strutils
 import jsonx
 import relay
 import openai/chat
@@ -95,8 +95,8 @@ type
   ApiErrorObject = object
     message: string
     `type`: string
-    param: Option[string]
-    code: Option[string]
+    param: string
+    code: int
 
   ApiErrorEnvelope = object
     error: ApiErrorObject
@@ -161,10 +161,6 @@ proc shortened(text: string; limit = 700): string =
   if result.len > limit:
     result = result[0 ..< limit] & "..."
 
-proc optionText(value: Option[string]): string =
-  if value.isSome:
-    result = value.get()
-
 proc apiDetailLocation(item: ApiDetailItem): string =
   for part in item.loc:
     if part.len > 0:
@@ -178,13 +174,7 @@ proc openAiErrorMessage(status: int; body: string; message: var string): bool =
   try:
     let parsed = fromJson(body, ApiErrorEnvelope)
     if parsed.error.message.strip().len > 0:
-      var details = ""
-      details.appendField("type", parsed.error.`type`)
-      details.appendField("param", parsed.error.param.optionText())
-      details.appendField("code", parsed.error.code.optionText())
-      message = prefix & parsed.error.message.strip()
-      if details.len > 0:
-        message.add " (" & details & ")"
+      message = prefix & parsed.error.message.strip().shortened(120)
       result = true
   except CatchableError:
     discard
