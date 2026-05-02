@@ -3,7 +3,7 @@ import jsonx
 import relay
 import openai/chat
 import openai/retry
-import ./[config, ui_doc, ui_parse, ui_schema]
+import ./[config, turn_extract, ui_compile, ui_doc, ui_parse, ui_schema]
 
 {.passL: "-lcurl".}
 
@@ -96,7 +96,7 @@ type
     message: string
     `type`: string
     param: string
-    code: int
+    code: RawJson
 
   ApiErrorEnvelope = object
     error: ApiErrorObject
@@ -175,6 +175,11 @@ proc openAiErrorMessage(status: int; body: string; message: var string): bool =
     let parsed = fromJson(body, ApiErrorEnvelope)
     if parsed.error.message.strip().len > 0:
       message = prefix & parsed.error.message.strip().shortened(120)
+      var details = ""
+      details.appendField("type", parsed.error.`type`)
+      details.appendField("param", parsed.error.param)
+      if details.len > 0:
+        message.add " (" & details & ")"
       result = true
   except CatchableError:
     discard
@@ -331,7 +336,7 @@ proc extractText(item: RequestResult): string =
   if not chatParse(item.response.body, parsed):
     raise newException(ValueError, "failed to parse chat response")
   try:
-    result = $parsed.firstText()
+    result = parsed.firstText()
   except ValueError:
     raise newException(ValueError,
       "response has no text content: " & getCurrentExceptionMsg())
@@ -389,6 +394,11 @@ proc finishUi(state: var AgentState; text: string; outResult: var AgentResult) =
   else:
     outResult = AgentResult(kind: resError,
       error: "invalid UI document: " & parseErr, text: text)
+
+proc compileUiFromChat*(text: string): AgentResult =
+  let view = extractTurnView(text)
+  let doc = compileUiDoc(view)
+  AgentResult(kind: resUiDoc, text: text, doc: doc)
 
 proc finishSuccess(state: var AgentState; text: string;
     outResult: var AgentResult) =

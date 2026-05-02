@@ -121,11 +121,12 @@ proc pollAgent(state: var AppState) =
     of resError:
       state.status = res.error
     of resChatText:
-      let err = state.agent.enqueueUi(state.doc)
-      if err.len > 0:
-        state.status = err
-      else:
-        state.status = "Designing the next screen..."
+      try:
+        let ui = compileUiFromChat(res.text)
+        state.replaceDoc(ui.doc)
+        state.status = ""
+      except CatchableError:
+        state.status = getCurrentExceptionMsg()
     of resUiDoc:
       state.replaceDoc(res.doc)
       state.status = ""
