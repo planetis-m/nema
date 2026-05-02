@@ -3,53 +3,26 @@ import jsonx
 import relay
 import openai/chat
 import openai/retry
-import ./[config, turn_extract, ui_compile, ui_doc, ui_parse, ui_schema]
+import ./config
 
 {.passL: "-lcurl".}
 
 const
   ChatBasePrompt* = """
 You are the Chat Agent for an adaptive desktop app. Answer the user's task and
-keep the task state in visible text. Use this simple structure when it applies:
-a short heading, body text, optional fenced code blocks with language names,
-exactly one 'Next action: choose one|type|none' line, and an 'Options:' list
-only for choice steps. For choice steps, provide short option labels. For type
-steps, use 'Next action: type' and ask for exactly the needed input. For
-completed steps, use 'Next action: none'. Treat UI values, clicks, selections,
-and submitted text as the user's interaction with the current screen. Do not
-mention JSON, layouts, renderers, tabs, or implementation details."""
+keep the task state in visible plain text.
 
-  UiBasePrompt* = """
-You are the UI Agent for a Nim desktop app. Your only job is to convert the
-latest Chat Agent response into one valid UiDoc JSON object.
+Do not mention JSON, layouts, renderers, tabs, or implementation details.
+Do not rely on hidden state for information the user needs to choose the next
+step.
 
-Execution path:
-1. Read the latest assistant message, then ignore older messages except for
-brief context.
-2. Map structure to explicit components: heading or title -> text area; body
-paragraphs -> text area; fenced code -> code area with language; choice prompt
-and Options -> radio area plus buttons area; free-form prompt -> textInput area;
-math-heavy content -> math area.
-3. If 'Next action: choose one' appears, render choices and one Submit button.
-If 'Next action: type' appears, render one textInput with a clear submitLabel.
-If 'Next action: none' appears, render only content areas.
-4. Choose a compact layout that fits the available adaptive surface. Prefer one
-vertical flow. Use side-by-side areas only for comparison.
+When choices are useful, write them as short lettered lines:
+A) First option
+B) Second option
 
-Contract:
-- Return JSON only. version must be 1.
-- Do not ask the renderer to interpret markdown. Strip heading markers from text
-areas and put code blocks in code areas.
-- layout must be a uirelays markdown table and every area name must exist in
-layout.
-- If you include a radio or buttons area, include that exact area name in layout.
-- Supported kinds: text, code, radio, buttons, textInput, math.
-- radio/buttons options must be objects like {"id":"a","label":"Choice A"};
-never use string options.
-- radio/buttons require id and non-empty options. textInput requires id.
-- Keep component ids stable, lowercase, and specific to the current step.
-- Example choice layout: {"version":1,"title":"Quiz","layout":"| prompt, * |\n| choices, 7 lines |\n| actions, 2 lines |","areas":[{"name":"prompt","kind":"text","text":"Question text"},{"name":"choices","kind":"radio","id":"answer","options":[{"id":"a","label":"First"},{"id":"b","label":"Second"}]},{"name":"actions","kind":"buttons","id":"actions","options":[{"id":"submit","label":"Submit"}]}],"focus":"choices"}.
-- Keep the screen focused on the current user task."""
+When typed input is useful, ask directly for the exact input needed.
+The app always provides a text input below your response, so do not create or
+describe UI controls."""
 
   MaxRetries = 3
 
@@ -64,18 +37,15 @@ type
 
   AgentPhase = enum
     apIdle,
-    apWaitingChat,
-    apWaitingUi
+    apWaitingChat
 
   ResultKind* = enum
     resChatText,
-    resUiDoc,
     resError
 
   AgentResult* = object
     kind*: ResultKind
     text*: string
-    doc*: UiDoc
     error*: string
 
   AgentState* = object
@@ -89,7 +59,6 @@ type
     activeRequestId: int64
     pendingChatMessages: seq[ChatMessage]
     pendingUserText: string
-    pendingDoc: UiDoc
     nextId: int64
 
   ApiErrorObject = object
@@ -137,7 +106,7 @@ proc hasPendingChat*(state: AgentState): bool =
   state.phase == apWaitingChat
 
 proc hasPendingUi*(state: AgentState): bool =
-  state.phase == apWaitingUi
+  false
 
 proc resetPending(state: var AgentState) =
   state.phase = apIdle
@@ -145,7 +114,6 @@ proc resetPending(state: var AgentState) =
   state.activeRequestId = 0
   state.pendingChatMessages.setLen(0)
   state.pendingUserText = ""
-  state.pendingDoc = UiDoc()
 
 proc appendField(text: var string; name, value: string) =
   if value.strip().len == 0:
@@ -230,31 +198,6 @@ proc clearHistory*(state: var AgentState) =
   state.chatHistory.setLen(0)
   state.clearPending()
 
-proc formatUiUserMsg(chatHistory: seq[ChatEntry]; currentDoc: UiDoc): string =
-  var latestAssistant = ""
-  result = "Conversation so far:\n"
-  if chatHistory.len == 0:
-    result.add "(empty)\n"
-  else:
-    for entry in chatHistory:
-      result.add "- "
-      result.add if entry.role == arUser: "User" else: "Assistant"
-      result.add ": "
-      result.add entry.content.strip()
-      result.add "\n"
-      if entry.role == arAssistant:
-        latestAssistant = entry.content.strip()
-
-  result.add "\nLatest assistant message to turn into UI:\n"
-  if latestAssistant.len > 0:
-    result.add latestAssistant
-    result.add "\n"
-  else:
-    result.add "(none)\n"
-  result.add "\nCurrent UiDoc JSON:\n"
-  result.add toJson(currentDoc)
-  result.add "\n\nReturn the next UiDoc JSON only."
-
 proc enqueue(state: var AgentState; messages: seq[ChatMessage];
     model: string; maxTokens: int; responseFormat: ResponseFormat): int64 =
   result = state.nextId
@@ -275,10 +218,6 @@ proc enqueue(state: var AgentState; messages: seq[ChatMessage];
     timeoutMs = state.cfg.timeoutMs
   )
   state.client.startRequests(batch)
-
-proc buildUiMessages(state: AgentState; currentDoc: UiDoc): seq[ChatMessage] =
-  result.add systemMessageText(UiBasePrompt)
-  result.add userMessageText(formatUiUserMsg(state.chatHistory, currentDoc))
 
 proc busyError(state: AgentState): string =
   if state.phase != apIdle:
@@ -306,24 +245,6 @@ proc submitChat*(state: var AgentState; userText: string): string =
   state.attempt = 1
   state.pendingChatMessages = messages
   state.pendingUserText = text
-  result = ""
-
-proc enqueueUi*(state: var AgentState; currentDoc: UiDoc): string =
-  if state.client == nil:
-    return "agent is closed"
-  let busy = state.busyError()
-  if busy.len > 0:
-    return busy
-  try:
-    state.activeRequestId = state.enqueue(state.buildUiMessages(currentDoc),
-      state.cfg.uiModel, 1200, uiDocFmt)
-  except IOError:
-    let err = getCurrentExceptionMsg()
-    state.resetPending()
-    return err
-  state.phase = apWaitingUi
-  state.attempt = 1
-  state.pendingDoc = currentDoc
   result = ""
 
 proc extractText(item: RequestResult): string =
@@ -355,10 +276,6 @@ proc retryCurrent(state: var AgentState): bool =
     of apWaitingChat:
       state.activeRequestId = state.enqueue(state.pendingChatMessages,
         state.cfg.chatModel, 800, formatText)
-    of apWaitingUi:
-      state.activeRequestId = state.enqueue(
-        state.buildUiMessages(state.pendingDoc), state.cfg.uiModel, 1200,
-        uiDocFmt)
     of apIdle:
       return false
     result = true
@@ -385,28 +302,11 @@ proc finishChat(state: var AgentState; text: string; outResult: var AgentResult)
   state.resetPending()
   outResult = AgentResult(kind: resChatText, text: text)
 
-proc finishUi(state: var AgentState; text: string; outResult: var AgentResult) =
-  var doc: UiDoc
-  var parseErr = ""
-  state.resetPending()
-  if parseUiDoc(text, doc, parseErr):
-    outResult = AgentResult(kind: resUiDoc, text: text, doc: doc)
-  else:
-    outResult = AgentResult(kind: resError,
-      error: "invalid UI document: " & parseErr, text: text)
-
-proc compileUiFromChat*(text: string): AgentResult =
-  let view = extractTurnView(text)
-  let doc = compileUiDoc(view)
-  AgentResult(kind: resUiDoc, text: text, doc: doc)
-
 proc finishSuccess(state: var AgentState; text: string;
     outResult: var AgentResult) =
   case state.phase
   of apWaitingChat:
     state.finishChat(text, outResult)
-  of apWaitingUi:
-    state.finishUi(text, outResult)
   of apIdle:
     discard
 

@@ -1,135 +1,72 @@
-import std/[sequtils, strutils]
+import std/strutils
 import ./turn_view
 
 const
-  MaxOptions = 6
+  FenceStart = "```ui"
+  FenceEnd = "```"
 
-proc stripMarkdownMarkers(text: string): string =
+proc cleanTitle(text: string): string =
   result = text.strip()
-  while result.startsWith("#"):
-    result = result[1..^1].strip()
-  if result.startsWith("**") and result.endsWith("**") and result.len >= 4:
-    result = result[2 .. ^3].strip()
-  result = result.replace("**", "")
-  result = result.replace("__", "")
-  result = result.strip()
+  if result.len == 0:
+    result = "Assistant"
 
-proc isHorizontalRule(line: string): bool =
-  let stripped = line.strip()
-  stripped == "---" or stripped == "***" or stripped == "___"
-
-proc optionFromLine(line: string; option: var TurnOption): bool =
-  let stripped = line.strip()
-  if stripped.len < 3:
-    return false
-  if not stripped[0].isAlphaAscii:
-    return false
-  if stripped[1] != ')' and stripped[1] != '.':
+proc splitUiBlock*(text: string; visible, block: var string): bool =
+  let start = text.find(FenceStart)
+  if start < 0:
+    visible = text
+    block = ""
     return false
 
-  let label = stripped[2..^1].strip().stripMarkdownMarkers()
-  if label.len == 0:
+  let contentStart = start + FenceStart.len
+  let stop = text.find(FenceEnd, contentStart)
+  if stop < 0:
+    visible = text
+    block = ""
     return false
 
-  option = TurnOption(id: ($stripped[0]).toLowerAscii(), label: label)
+  visible = (text[0 ..< start] & text[stop + FenceEnd.len .. ^1]).strip()
+  block = text[contentStart ..< stop].strip()
   result = true
 
-proc looksLikeTypePrompt(line: string): bool =
-  let lowered = line.toLowerAscii()
-  result =
-    lowered.contains("please type") or
-    lowered.contains("please provide") or
-    lowered.contains("provide a name") or
-    lowered.contains("enter") or
-    lowered.contains("type") or
-    lowered.contains("what is the name") or
-    lowered.contains("what is your nation called") or
-    lowered.contains("what is it called")
+proc parseOption(value: string; option: var UiCommandOption): bool =
+  let sep = value.find("|")
+  if sep <= 0:
+    return false
 
-proc isNextActionLine(line: string): bool =
-  let lowered = line.strip().toLowerAscii()
-  lowered.startsWith("next action:") or lowered.startsWith("nextaction:")
+  let id = value[0 ..< sep].strip().toLowerAscii()
+  let label = value[sep + 1 .. ^1].strip()
+  if id.len == 0 or label.len == 0:
+    return false
 
-proc nextActionKind(text: string): TurnActionKind =
-  for line in text.splitLines:
-    let lowered = line.strip().toLowerAscii()
-    let normalized = line.strip().normalize()
-    if line.isNextActionLine():
-      if lowered.contains("choose one") or normalized.contains("chooseone"):
-        return takChoose
-      if lowered.contains("type"):
-        return takType
-      if lowered.contains("none"):
-        return takNone
-  result = takNone
+  option = UiCommandOption(id: id, label: label)
+  result = true
 
-proc usefulLines(text: string): seq[string] =
-  for rawLine in text.splitLines:
-    if not rawLine.isHorizontalRule() and not rawLine.isNextActionLine():
-      let line = rawLine.stripMarkdownMarkers()
-      if line.len > 0:
-        result.add line
+proc parseUiCommand*(block: string): UiCommand =
+  for rawLine in block.splitLines:
+    let line = rawLine.strip()
+    if line.len == 0:
+      discard
+    elif line == "choice":
+      result.kind = uckChoice
+    elif line == "input":
+      result.kind = uckInput
+    elif line == "none":
+      result.kind = uckNone
+    elif line.startsWith("title:"):
+      result.title = line["title:".len .. ^1].cleanTitle()
+    elif line.startsWith("prompt:"):
+      result.prompt = line["prompt:".len .. ^1].strip()
+    elif line.startsWith("placeholder:"):
+      result.placeholder = line["placeholder:".len .. ^1].strip()
+    elif line.startsWith("option:"):
+      var option: UiCommandOption
+      if parseOption(line["option:".len .. ^1], option):
+        result.options.add option
 
-proc titleFrom(lines: seq[string]): string =
-  for line in lines:
-    if line.normalize() notin ["pickone.", "chooseone."]:
-      return line
-  result = "Adaptive UI"
+proc uiCommandFromText*(text: string; visible: var string): UiCommand =
+  var block = ""
+  if splitUiBlock(text, visible, block):
+    result = parseUiCommand(block)
+  else:
+    visible = text
 
-proc actionPromptFrom(lines: seq[string]; options: seq[TurnOption];
-    actionKind: TurnActionKind): string =
-  if actionKind == takType:
-    for i in countdown(lines.high, 0):
-      if lines[i].looksLikeTypePrompt():
-        return lines[i]
-
-  if actionKind == takChoose:
-    for i in countdown(lines.high, 0):
-      let line = lines[i]
-      var option: TurnOption
-      if not optionFromLine(line, option) and
-          line.normalize() notin ["pickone.", "chooseone."]:
-        return line
-
-  if lines.len > 0:
-    result = lines[^1]
-
-proc bodyFrom(lines: seq[string]; options: seq[TurnOption];
-    actionPrompt: string): string =
-  let optionIds = options.mapIt(it.id)
-  for line in lines:
-    var option: TurnOption
-    let isOption = optionFromLine(line, option) and option.id in optionIds
-    let isPromptMarker = line.normalize() in ["pickone.", "chooseone."]
-    if not isOption and not isPromptMarker and line != actionPrompt:
-      if result.len > 0:
-        result.add "\n"
-      result.add line
-
-proc extractTurnView*(text: string): TurnView =
-  let lines = usefulLines(text)
-  var options: seq[TurnOption]
-  for line in lines:
-    var option: TurnOption
-    if optionFromLine(line, option):
-      options.add option
-
-  var kind = nextActionKind(text)
-  if options.len >= 2 and options.len <= MaxOptions:
-    kind = takChoose
-  elif kind == takNone:
-    for i in countdown(lines.high, 0):
-      if lines[i].looksLikeTypePrompt():
-        kind = takType
-        break
-
-  let prompt = actionPromptFrom(lines, options, kind)
-  result = TurnView(
-    title: titleFrom(lines),
-    body: bodyFrom(lines, options, prompt),
-    actionKind: kind,
-    actionPrompt: prompt,
-    options: options
-  )
-  if result.body.len == 0 and prompt.len > 0:
-    result.body = prompt

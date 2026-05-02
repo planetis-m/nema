@@ -1,17 +1,17 @@
 type
-  TurnActionKind* = enum
-    takNone,
-    takChoose,
-    takType
+  UiCommandKind* = enum
+    uckNone,
+    uckChoice,
+    uckInput
 
-  TurnOption* = object
+  UiCommandOption* = object
     id*: string
     label*: string
 
-  TurnView* = object
+  UiCommand* = object
+    kind*: UiCommandKind
     title*: string
-    body*: string
-    actionKind*: TurnActionKind
-    actionPrompt*: string
-    options*: seq[TurnOption]
+    prompt*: string
+    placeholder*: string
+    options*: seq[UiCommandOption]
 

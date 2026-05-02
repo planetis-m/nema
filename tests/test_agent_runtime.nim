@@ -1,7 +1,5 @@
 import std/strutils
-import jsonx
-import openai/chat
-import adaptive_ui/[agent, config, ui_schema]
+import adaptive_ui/[agent, config]
 
 let cfgMissing = AppConfig(
   apiUrl: "https://example.invalid/v1/chat/completions",
@@ -26,36 +24,11 @@ block configHasKey:
     uiModel: "", timeoutMs: 0
   ).hasKey()
 
-block responseFormat:
-  let text = toJson(uiDocFmt)
-  doAssert "\"type\":\"json_schema\"" in text
-  doAssert "\"name\":\"ui_doc\"" in text
-  doAssert "\"strict\":true" in text
-  doAssert "\"enum\":[\"text\",\"code\",\"radio\",\"buttons\",\"textInput\",\"math\"]" in text
-  doAssert "\"required\":[\"version\",\"title\",\"layout\",\"areas\"]" in text
-  doAssert "\"required\":[\"id\",\"label\"]" in text
-
-block uiRequestResponseFormat:
-  let request = chatCreate(
-    model = "ui-model",
-    messages = @[systemMessageText(UiBasePrompt)],
-    responseFormat = uiDocFmt
-  )
-  let text = toJson(request)
-  doAssert "\"response_format\":{\"type\":\"json_schema\"" in text
-  doAssert "\"response_format\":{\"type\":\"json\"" notin text
-
 block promptWorkflowRules:
   doAssert "Chat Agent" in ChatBasePrompt
-  doAssert "UI Agent" in UiBasePrompt
-  doAssert "Next action: choose one" in UiBasePrompt
-  doAssert "radio area plus buttons area" in UiBasePrompt
-  doAssert "textInput area" in UiBasePrompt
-  doAssert "Next action: type" in ChatBasePrompt
-  doAssert "Next action: none" in ChatBasePrompt
-  doAssert "fenced code -> code area" in UiBasePrompt
-  doAssert "never use string options" in UiBasePrompt
-  doAssert "Do not ask the renderer to interpret markdown" in UiBasePrompt
+  doAssert "lettered lines" in ChatBasePrompt
+  doAssert "The app always provides a text input" in ChatBasePrompt
+  doAssert "Do not mention JSON" in ChatBasePrompt
   doAssert "quiz-style" notin ChatBasePrompt
 
 block apiOpenAIError:

@@ -13,6 +13,8 @@ const
   DefaultWindowWidth* = 900
   DefaultWindowHeight* = 600
   DefaultWindowTitle* = "Adaptive UI"
+  InputPad = 8
+  SendButtonWidth = 96
   OuterLayoutSpec = """
 | adaptive, * |
 | input, 4 lines |
@@ -63,20 +65,67 @@ proc currentStatus(state: AppState): string =
     result = state.status
   elif state.agent.hasPendingChat():
     result = "Working..."
-  elif state.agent.hasPendingUi():
-    result = "Designing the next screen..."
   else:
     result = ""
 
-proc inputEvent(state: var AppState; e: Event; submitted: var string): Event =
+proc sendButtonRect(r: Rect): Rect =
+  rect(
+    r.x + max(0, r.w - SendButtonWidth - InputPad),
+    r.y + InputPad,
+    min(SendButtonWidth, max(0, r.w - InputPad * 2)),
+    max(0, r.h - InputPad * 2)
+  )
+
+proc inputEditorRect(r: Rect): Rect =
+  let button = sendButtonRect(r)
+  rect(
+    r.x + InputPad,
+    r.y + InputPad,
+    max(0, button.x - r.x - InputPad * 2),
+    max(0, r.h - InputPad * 2)
+  )
+
+proc takeInputText(state: var AppState; submitted: var string) =
+  let text = state.input.fullText
+  if text.strip().len > 0:
+    submitted = text
+    state.input.clear()
+
+proc inputEvent(state: var AppState; e: Event; submitted: var string;
+    r: Rect): Event =
   result = e
   if state.focus == afInput and e.kind == KeyDownEvent and
       e.key == KeyEnter and (CtrlPressed in e.mods or GuiPressed in e.mods):
-    let text = state.input.fullText
-    if text.len > 0:
-      submitted = text
-      state.input.clear()
+    state.takeInputText(submitted)
     result = default Event
+  elif state.focus == afInput and e.kind == MouseDownEvent and
+      e.button == LeftButton and sendButtonRect(r).contains(point(e.x, e.y)):
+    state.takeInputText(submitted)
+    result = default Event
+
+proc drawRectBorder(r: Rect; c: Color) =
+  if r.w > 0 and r.h > 0:
+    drawLine(r.x, r.y, r.x + r.w - 1, r.y, c)
+    drawLine(r.x, r.y, r.x, r.y + r.h - 1, c)
+    drawLine(r.x + r.w - 1, r.y, r.x + r.w - 1,
+      r.y + r.h - 1, c)
+    drawLine(r.x, r.y + r.h - 1, r.x + r.w - 1,
+      r.y + r.h - 1, c)
+
+proc drawSendButton(font: Font; r: Rect; enabled: bool; theme: Theme) =
+  let bg =
+    if enabled: theme.selBg
+    else: theme.scrollTrackColor
+  let fg =
+    if enabled: theme.fg[TokenClass.Text]
+    else: theme.fg[TokenClass.Comment]
+  fillRect(r, bg)
+  drawRectBorder(r, theme.fg[TokenClass.Operator])
+  let label = "Send"
+  let size = measureText(font, label)
+  discard drawText(font, r.x + max(4, (r.w - size.w) div 2),
+    r.y + max(4, (r.h - fontLineSkip(font)) div 2),
+    label, fg, bg)
 
 proc replaceDoc(state: var AppState; doc: UiDoc) =
   state.doc = doc
@@ -121,14 +170,7 @@ proc pollAgent(state: var AppState) =
     of resError:
       state.status = res.error
     of resChatText:
-      try:
-        let ui = compileUiFromChat(res.text)
-        state.replaceDoc(ui.doc)
-        state.status = ""
-      except CatchableError:
-        state.status = getCurrentExceptionMsg()
-    of resUiDoc:
-      state.replaceDoc(res.doc)
+      state.replaceDoc(textUiDoc("Assistant", res.text))
       state.status = ""
 
 proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =
@@ -199,10 +241,13 @@ proc runApp*(configPath = "adaptive_ui.json";
 
     var submitted = ""
     let inputSourceEvent = if state.focus == afInput: e else: default Event
-    let inputDrawEvent = state.inputEvent(inputSourceEvent, submitted)
+    let inputDrawEvent = state.inputEvent(inputSourceEvent, submitted,
+      cells["input"])
     fillRect(cells["input"], state.theme.bg)
-    discard state.input.draw(inputDrawEvent, cells["input"].inset(8),
+    discard state.input.draw(inputDrawEvent, inputEditorRect(cells["input"]),
       state.focus == afInput)
+    drawSendButton(font, sendButtonRect(cells["input"]),
+      state.input.fullText.strip().len > 0, state.theme)
     state.handleSubmittedInput(submitted)
 
     drawStatus(font, cells["status"], state.currentStatus(), state.theme)
