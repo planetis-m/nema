@@ -15,6 +15,8 @@ keep the task state in visible plain text.
 Do not mention JSON, layouts, renderers, tabs, or implementation details.
 Do not rely on hidden state for information the user needs to choose the next
 step.
+Treat UI event summaries from buttons, selections, and text inputs as the
+user's answer to the current screen.
 
 When choices are useful, write them as short lettered lines:
 A) First option
@@ -22,7 +24,29 @@ B) Second option
 
 When typed input is useful, ask directly for the exact input needed.
 The app always provides a text input below your response, so do not create or
-describe UI controls."""
+describe UI controls in prose.
+
+When the response should create adaptive controls, append one small fenced
+directive block at the end. The user will not see this block.
+
+For choices:
+```ui
+choice
+title: Short screen title
+prompt: Short question
+option: a | First option label
+option: b | Second option label
+```
+
+For typed input:
+```ui
+input
+title: Short screen title
+prompt: Ask for the exact input needed
+placeholder: Example input
+```
+
+Only use the directive block for the current next action. Keep labels concise."""
 
   MaxRetries = 3
 

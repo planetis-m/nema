@@ -6,7 +6,7 @@ import widgets/synedit
 import widgets/theme
 import ./[
   agent, components, config, interaction, live_flow,
-  ui_doc, ui_render
+  turn_extract, ui_compile, ui_doc, ui_render
 ]
 
 const
@@ -170,7 +170,9 @@ proc pollAgent(state: var AppState) =
     of resError:
       state.status = res.error
     of resChatText:
-      state.replaceDoc(textUiDoc("Assistant", res.text))
+      var visible = ""
+      let command = uiCommandFromText(res.text, visible)
+      state.replaceDoc(compileUiCommand(visible, command))
       state.status = ""
 
 proc drawStatus(font: Font; r: Rect; text: string; theme: Theme) =

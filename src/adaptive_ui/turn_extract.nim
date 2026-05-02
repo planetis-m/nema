@@ -10,22 +10,22 @@ proc cleanTitle(text: string): string =
   if result.len == 0:
     result = "Assistant"
 
-proc splitUiBlock*(text: string; visible, block: var string): bool =
+proc splitUiBlock*(text: string; visible, uiBlock: var string): bool =
   let start = text.find(FenceStart)
   if start < 0:
     visible = text
-    block = ""
+    uiBlock = ""
     return false
 
   let contentStart = start + FenceStart.len
   let stop = text.find(FenceEnd, contentStart)
   if stop < 0:
     visible = text
-    block = ""
+    uiBlock = ""
     return false
 
   visible = (text[0 ..< start] & text[stop + FenceEnd.len .. ^1]).strip()
-  block = text[contentStart ..< stop].strip()
+  uiBlock = text[contentStart ..< stop].strip()
   result = true
 
 proc parseOption(value: string; option: var UiCommandOption): bool =
@@ -41,8 +41,8 @@ proc parseOption(value: string; option: var UiCommandOption): bool =
   option = UiCommandOption(id: id, label: label)
   result = true
 
-proc parseUiCommand*(block: string): UiCommand =
-  for rawLine in block.splitLines:
+proc parseUiCommand*(uiBlock: string): UiCommand =
+  for rawLine in uiBlock.splitLines:
     let line = rawLine.strip()
     if line.len == 0:
       discard
@@ -64,9 +64,8 @@ proc parseUiCommand*(block: string): UiCommand =
         result.options.add option
 
 proc uiCommandFromText*(text: string; visible: var string): UiCommand =
-  var block = ""
-  if splitUiBlock(text, visible, block):
-    result = parseUiCommand(block)
+  var uiBlock = ""
+  if splitUiBlock(text, visible, uiBlock):
+    result = parseUiCommand(uiBlock)
   else:
     visible = text
-

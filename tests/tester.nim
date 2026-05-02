@@ -8,6 +8,7 @@ const
     "tests/test_interaction.nim",
     "tests/test_live_flow.nim",
     "tests/test_math_render.nim",
+    "tests/test_turn_compile.nim",
     "tests/test_ui_doc_parse.nim",
     "tests/test_ui_render_state.nim"
   ]

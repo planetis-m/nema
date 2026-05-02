@@ -1,3 +1,4 @@
+import std/strutils
 import ./[turn_view, ui_doc]
 
 proc textArea(name, text: string): UiArea =
@@ -70,4 +71,3 @@ proc compileUiCommand*(visible: string; command: UiCommand): UiDoc =
     result = compileInput(visible, command)
   of uckNone:
     result = textUiDoc(command.titleFor(), visible)
-
