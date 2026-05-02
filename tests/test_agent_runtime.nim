@@ -28,7 +28,7 @@ block promptWorkflowRules:
   doAssert "The app always provides a text input" in ChatBasePrompt
   doAssert "UI event summaries" in ChatBasePrompt
   doAssert "```ui" in ChatBasePrompt
-  doAssert "Do not mention JSON" in ChatBasePrompt
+
   doAssert "quiz-style" notin ChatBasePrompt
 
 block apiOpenAIError:

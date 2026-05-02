@@ -12,7 +12,6 @@ const
 You are the Chat Agent for an adaptive desktop app. Answer the user's task and
 keep the task state in visible plain text.
 
-Do not mention JSON, layouts, renderers, tabs, or implementation details.
 Do not rely on hidden state for information the user needs to choose the next
 step.
 Treat UI event summaries from buttons, selections, and text inputs as the
@@ -199,33 +198,29 @@ proc enqueue(state: var AgentState; messages: seq[ChatMessage];
   )
   state.client.startRequests(batch)
 
-proc busyError(state: AgentState): string =
-  if state.phase != apIdle:
-    result = "request already in progress"
-
 proc submitChat*(state: var AgentState; userText: string): string =
   let text = userText.strip()
   if text.len == 0:
-    return "input is empty"
-  if state.client == nil:
-    return "agent is closed"
-  let busy = state.busyError()
-  if busy.len > 0:
-    return busy
-  if not state.cfg.hasKey():
-    return "Set apiKey in config or OPENAI_API_KEY."
-  let messages = state.chatMessages & @[userMessageText(text)]
-  try:
-    state.activeRequestId = state.enqueue(messages, state.cfg.chatModel, 800,
-      formatText)
-  except IOError:
-    state.resetPending()
-    return getCurrentExceptionMsg()
-  state.phase = apWaitingChat
-  state.attempt = 1
-  state.pendingChatMessages = messages
-  state.pendingUserText = text
-  result = ""
+    result = "input is empty"
+  elif state.client == nil:
+    result = "agent is closed"
+  elif state.phase != apIdle:
+    result = "request already in progress"
+  elif not state.cfg.hasKey():
+    result = "Set apiKey in config or OPENAI_API_KEY."
+  else:
+    let messages = state.chatMessages & @[userMessageText(text)]
+    try:
+      state.activeRequestId = state.enqueue(messages, state.cfg.chatModel, 800,
+        formatText)
+    except IOError:
+      state.resetPending()
+      result = getCurrentExceptionMsg()
+      return
+    state.phase = apWaitingChat
+    state.attempt = 1
+    state.pendingChatMessages = messages
+    state.pendingUserText = text
 
 proc extractText(item: RequestResult): string =
   if item.error.kind != teNone:
@@ -289,6 +284,20 @@ proc finishSuccess(state: var AgentState; text: string;
   of apIdle:
     discard
 
+proc handlePollError(state: var AgentState; item: RequestResult;
+    err: string; outResult: var AgentResult) =
+  let attemptBefore = state.attempt
+  try:
+    if isRetriable(item) and state.retryCurrent():
+      outResult = AgentResult(kind: resError,
+        error: "retrying (" & $attemptBefore & "/" & $MaxRetries & "): " & err)
+    else:
+      state.resetPending()
+      outResult = AgentResult(kind: resError, error: err)
+  except CatchableError:
+    outResult = AgentResult(kind: resError,
+      error: "retry failed: " & getCurrentExceptionMsg())
+
 proc poll*(state: var AgentState; outResult: var AgentResult): bool =
   var item: RequestResult
   if not state.pollActiveResult(item):
@@ -298,16 +307,5 @@ proc poll*(state: var AgentState; outResult: var AgentResult): bool =
     let text = extractText(item)
     state.finishSuccess(text, outResult)
   except CatchableError:
-    let err = getCurrentExceptionMsg()
-    let attemptBefore = state.attempt
-    try:
-      if isRetriable(item) and state.retryCurrent():
-        outResult = AgentResult(kind: resError,
-          error: "retrying (" & $attemptBefore & "/" & $MaxRetries & "): " & err)
-      else:
-        state.resetPending()
-        outResult = AgentResult(kind: resError, error: err)
-    except CatchableError:
-      outResult = AgentResult(kind: resError,
-        error: "retry failed: " & getCurrentExceptionMsg())
+    state.handlePollError(item, getCurrentExceptionMsg(), outResult)
   return true

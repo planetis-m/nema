@@ -30,23 +30,16 @@ proc valueText(area: UiArea; value: string): string =
 
 proc uiValuesText*(doc: UiDoc; rt: UiRuntime): string =
   for area in doc.areas:
-    var value = ""
-    case area.kind
-    of ukRadio:
-      value = rt.selectedOption(area)
-    of ukTextInput:
-      value = rt.textValue(area)
-    of ukText, ukCode, ukButtons, ukMath:
-      discard
-
+    let value =
+      case area.kind
+      of ukRadio: rt.selectedOption(area)
+      of ukTextInput: rt.textValue(area)
+      of ukText, ukCode, ukButtons, ukMath: ""
     if value.strip().len > 0:
       if result.len > 0:
         result.add "\n"
       result.add "- "
-      if area.id.len > 0:
-        result.add area.id
-      else:
-        result.add area.name
+      result.add if area.id.len > 0: area.id else: area.name
       result.add ": "
       result.add area.valueText(value)
 

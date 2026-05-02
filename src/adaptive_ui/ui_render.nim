@@ -235,18 +235,12 @@ proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
   fillRect(r, theme.bg)
   drawBorder(r, if focused: theme.fg[TokenClass.Operator] else: theme.scrollTrackColor)
 
-  var drawEvent = e
-  var submit = false
   let text = rt.components[key].editor.fullText
   let clickSubmit = textInputSubmitEvent(area, e, r, font, text)
-  if clickSubmit.kind != ueNone:
-    submit = true
-    drawEvent = default Event
-
-  if focused and e.kind == KeyDownEvent and e.key == KeyEnter and
-      (CtrlPressed in e.mods or GuiPressed in e.mods):
-    submit = true
-    drawEvent = default Event
+  let keySubmit = focused and e.kind == KeyDownEvent and e.key == KeyEnter and
+    (CtrlPressed in e.mods or GuiPressed in e.mods)
+  let submit = clickSubmit.kind != ueNone or keySubmit
+  let drawEvent = if submit: default Event else: e
 
   let editorRect = textInputEditorRect(area, r, font)
   discard rt.components[key].editor.draw(drawEvent, editorRect.inset(Pad), focused)

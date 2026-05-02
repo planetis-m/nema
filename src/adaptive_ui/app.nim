@@ -91,15 +91,17 @@ proc takeInputText(state: var AppState; submitted: var string) =
     submitted = text
     state.input.clear()
 
+proc isSendTrigger(focus: AppFocus; e: Event; r: Rect): bool =
+  focus == afInput and (
+    (e.kind == KeyDownEvent and e.key == KeyEnter and
+      (CtrlPressed in e.mods or GuiPressed in e.mods)) or
+    (e.kind == MouseDownEvent and e.button == LeftButton and
+      sendButtonRect(r).contains(point(e.x, e.y))))
+
 proc inputEvent(state: var AppState; e: Event; submitted: var string;
     r: Rect): Event =
   result = e
-  if state.focus == afInput and e.kind == KeyDownEvent and
-      e.key == KeyEnter and (CtrlPressed in e.mods or GuiPressed in e.mods):
-    state.takeInputText(submitted)
-    result = default Event
-  elif state.focus == afInput and e.kind == MouseDownEvent and
-      e.button == LeftButton and sendButtonRect(r).contains(point(e.x, e.y)):
+  if isSendTrigger(state.focus, e, r):
     state.takeInputText(submitted)
     result = default Event
 
