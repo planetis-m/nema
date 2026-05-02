@@ -5,7 +5,6 @@ let cfgMissing = AppConfig(
   apiUrl: "https://example.invalid/v1/chat/completions",
   apiKey: "",
   chatModel: "chat-model",
-  uiModel: "ui-model",
   timeoutMs: 1000
 )
 
@@ -13,7 +12,6 @@ let cfgWithKey = AppConfig(
   apiUrl: "https://example.invalid/v1/chat/completions",
   apiKey: "sk-test",
   chatModel: "chat-model",
-  uiModel: "ui-model",
   timeoutMs: 1000
 )
 
@@ -21,7 +19,7 @@ block configHasKey:
   doAssert not cfgMissing.hasKey()
   doAssert AppConfig(
     apiUrl: "", apiKey: "sk-test", chatModel: "",
-    uiModel: "", timeoutMs: 0
+    timeoutMs: 0
   ).hasKey()
 
 block promptWorkflowRules:
@@ -37,11 +35,6 @@ block apiOpenAIError:
   let text = apiErrorMessage(422,
     """{"error":{"message":"Field required","type":"invalid_request_error","param":"messages","code":null}}""")
   doAssert text == "HTTP 422: Field required (type: invalid_request_error, param: messages)"
-
-block apiFastApiError:
-  let text = apiErrorMessage(422,
-    """{"detail":[{"type":"missing","loc":["body","prompt"],"msg":"Field required","input":{}}]}""")
-  doAssert text == "HTTP 422: Field required (type: missing, field: body.prompt)"
 
 block missingKey:
   var state = initAgentState(cfgMissing)
@@ -73,7 +66,6 @@ block pendingSubmit:
   doAssert state.submitChat("hello") == ""
   doAssert state.hasPending()
   doAssert state.hasPendingChat()
-  doAssert not state.hasPendingUi()
   doAssert state.chatHistory.len == 0
 
   let err = state.submitChat("again")

@@ -129,7 +129,7 @@ proc drawSendButton(font: Font; r: Rect; enabled: bool; theme: Theme) =
 
 proc replaceDoc(state: var AppState; doc: UiDoc) =
   state.doc = doc
-  state.rt.focus = ""
+  state.rt = initUiRuntime()
 
 proc submitText(state: var AppState; text: string) =
   let err = state.agent.submitChat(text)
@@ -139,7 +139,6 @@ proc submitText(state: var AppState; text: string) =
     state.status = ""
 
 proc startNewSession(state: var AppState) =
-  state.rt = initUiRuntime()
   state.agent.clearHistory()
   state.replaceDoc(introUiDoc())
   state.status = "New adaptive session"

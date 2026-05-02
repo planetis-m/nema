@@ -83,8 +83,8 @@ Important facts:
 
 - The SDK is relay-native. It builds `RequestSpec`s through `chatRequest` and `chatAdd`.
 - Use `chatCreate`, `systemMessageText`, `userMessageText`, and `assistantMessageText`.
-- Use `formatJsonSchema` for structured output from the UI subagent, and
-  validate the returned document locally with `parseUiDoc`.
+- Use plain text chat responses for the app flow. Adaptive controls come from
+  the small fenced `ui` directive parsed locally.
 - Use `chatParse` to parse raw response JSON into `ChatCreateResult`.
 - Use `firstText`, `parseFirstTextJson`, `calls`, `parseFirstCallArgs`, and related accessors.
 - Tool-calling support exists, but this app does not need tool execution in the
@@ -92,14 +92,9 @@ Important facts:
 
 Design consequence:
 
-Run two logical model roles through the same SDK:
-
-- Chat agent: produces normal assistant content and task reasoning.
-- UI agent: converts the latest task state into a strict UI document.
-
-The UI agent should return structured JSON containing a markdown layout table
-and named areas. The app then uses `jsonx` to parse the result and
-`uirelays/layout` to resolve the layout.
+Run one model request path: the chat agent produces visible content plus an
+optional compact `ui` directive. Nim owns the resulting `UiDoc`, Submit controls,
+and `uirelays/layout` strings.
 
 ## jsonx
 
@@ -119,7 +114,7 @@ Important facts:
 
 Design consequence:
 
-Use typed object models for config, session state snapshots, UI documents, and UI agent responses. Avoid `std/json` for project data models.
+Use typed object models for config and app state. Avoid `std/json` for project data models.
 
 ## sdl3
 

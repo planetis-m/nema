@@ -2,20 +2,19 @@
 
 ## 1. Scope
 
-The adaptive UI app is a Nim desktop application that renders model-generated UI
-documents. The core system is not a quiz app, essay app, chat client, tutor, or
+The adaptive UI app is a Nim desktop application that renders locally generated
+UI documents. The core system is not a quiz app, essay app, chat client, tutor, or
 workflow engine. It is a generic `UiDoc` renderer plus a non-blocking agent
 runtime.
 
-The product exists to turn the structure and intent of a chat-agent response
-into an interface. It must not simply display assistant text. A response header
-should become a title or heading area, a multiple-choice prompt should become
-selectable controls, a code block should become a `code` area, and structured
-content should become the matching supported components.
+The product exists to turn the next action in a chat-agent response into an
+interface. It must not simply display assistant text when an action is available.
+A multiple-choice prompt should become selectable controls, and typed input
+should become a text input with a Submit affordance.
 
 There is no markdown renderer in the adaptive surface. Text areas display plain
-text. The UI agent is responsible for splitting response content into explicit
-areas and choosing a compact layout that fits the available space.
+text. The chat agent may append a compact fenced `ui` directive; Nim chooses the
+layout and builds the controls.
 
 Task-specific workflows must be expressed as generated `UiDoc` data and normal
 `UiEvent` summaries. Do not add hardcoded core modes, prompts, commands, or
@@ -68,9 +67,10 @@ src/
     app.nim
     config.nim
     agent.nim
+    turn_extract.nim
+    turn_view.nim
+    ui_compile.nim
     ui_doc.nim
-    ui_parse.nim
-    ui_schema.nim
     ui_render.nim
     components.nim
     interaction.nim
@@ -83,10 +83,11 @@ Core modules:
 - `app.nim`: owns `AppState`, the window loop, outer layout, commands, input
   routing, and agent polling.
 - `agent.nim`: owns `AgentState`, conversation history, Relay requests, OpenAI
-  parsing, retry, and sequential chat-to-UI flow.
+  parsing, retry, and chat flow.
+- `turn_extract.nim`: parses optional fenced `ui` directives from chat text.
+- `turn_view.nim`: owns the directive data types.
+- `ui_compile.nim`: compiles directives into local `UiDoc` values.
 - `ui_doc.nim`: owns the typed document and event contract.
-- `ui_parse.nim`: parses and validates generated `UiDoc` JSON.
-- `ui_schema.nim`: defines the strict structured-output schema.
 - `ui_render.nim`: resolves layouts and renders areas.
 - `components.nim`: stores persistent component state and creates events.
 - `interaction.nim`: converts events and current UI values into text.
@@ -110,13 +111,13 @@ One normal submitted turn:
 5. Each frame calls `pollAgent`.
 6. When chat text arrives, the pending user text and assistant text are
    committed to history.
-7. The app immediately enqueues a UI request with history plus current `UiDoc`.
-8. When UI JSON arrives, `parseUiDoc` validates it.
-9. A valid document replaces the current document.
-10. An invalid document reports an error and the previous document remains visible.
+7. `turn_extract.nim` removes an optional fenced `ui` directive from visible
+   text.
+8. `ui_compile.nim` builds a local `UiDoc`.
+9. The new document replaces the current document.
 
-The app has one pending phase at a time: idle, waiting for chat, or waiting for
-UI. `AgentState` stores the active Relay request id and ignores stale results.
+The app has one pending phase at a time: idle or waiting for chat.
+`AgentState` stores the active Relay request id and ignores stale results.
 This keeps execution deterministic and avoids competing writes to conversation
 state.
 
@@ -132,9 +133,9 @@ The input bar recognizes only generic commands:
 Do not add commands for a narrow workflow. A generated document can include
 buttons or inputs for workflow steps.
 
-## 8. UiDoc JSON
+## 8. UiDoc
 
-The UI subagent returns one JSON object:
+Nim constructs one `UiDoc` value:
 
 ```nim
 type
@@ -267,7 +268,6 @@ extension point, not loaded implicitly from local files.
   "apiUrl": "https://api.openai.com/v1/chat/completions",
   "apiKey": "",
   "chatModel": "gpt-4.1-mini",
-  "uiModel": "gpt-4.1-mini",
   "timeoutMs": 30000
 }
 ```
@@ -283,11 +283,6 @@ never write the API key.
 - Missing API key: show intro document and status. Do not start model requests.
 - Chat request error: parse provider error JSON when possible, show a clear
   status message, and keep the current document.
-- UI request error or invalid JSON: parse provider error JSON when possible,
-  show a clear status message, log raw text if present, and keep the current
-  document.
-- Layout failure: generated documents fail `parseUiDoc`; static documents must
-  be valid in source.
 - Closed agent: return an error string to the app instead of raising.
 
 ## 14. Tests
@@ -297,12 +292,12 @@ Tests use standalone Nim files and `doAssert`.
 Required coverage:
 
 - Config parse/save and API key omission.
-- `UiDoc` parse and validation errors.
+- Directive parsing and local `UiDoc` compilation.
 - Component keys, selection state, text state, and event constructors.
 - Interaction text conversion.
 - Generic command parsing.
 - Agent state initialization, empty input, and history clearing.
-- Provider API error parsing for OpenAI-style and validation-style responses.
+- Provider API error parsing for OpenAI-style responses.
 - Renderer state helpers and layout resolution.
 - Debug log and math helpers.
 
@@ -318,13 +313,12 @@ The app target and examples must compile without network access.
 
 The core concept is proven for the current generic path:
 
-- Typed `UiDoc` parsing and schema generation exist.
+- Directive parsing and local `UiDoc` compilation exist.
 - Static renderer examples compile.
 - Component state and event conversion are tested.
 - The app uses Relay polling instead of blocking network calls.
-- Live provider probes confirm native schema requests are sent as
-  `json_schema` and that the configured UI model can return a `UiDoc` accepted
-  by `parseUiDoc`.
+- Live provider probes confirm chat responses can drive adaptive controls through
+  fenced `ui` directives.
 
 Remaining risks:
 

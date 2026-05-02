@@ -254,23 +254,6 @@ proc renderTextInput(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
   else:
     result = noUiEvent()
 
-proc hasArea(doc: UiDoc; name: string): bool =
-  for area in doc.areas:
-    if area.name == name:
-      return true
-  result = false
-
-proc missingCellNames*(doc: UiDoc; cells: Table[string, Rect]): seq[string] =
-  for name in cells.keys:
-    if not doc.hasArea(name):
-      result.add name
-
-proc drawEmptyCells(doc: UiDoc; cells: Table[string, Rect]; theme: Theme) =
-  for name in doc.missingCellNames(cells):
-    let r = cells[name]
-    fillRect(r, theme.bg)
-    drawBorder(r, theme.scrollTrackColor)
-
 proc resolveUiDocCells*(doc: UiDoc; area: Rect; lineHeight: int): Table[string, Rect] =
   let parsed = parseLayout(doc.layout)
   result = parsed.resolve(area.w, area.h, lineHeight, gap = 2)
@@ -281,7 +264,6 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
     font: Font; fm: FontMetrics; theme: Theme = catppuccinMocha()): UiEvent =
   var cells = resolveUiDocCells(doc, area, fm.lineHeight)
   fillRect(area, theme.bg)
-  drawEmptyCells(doc, cells, theme)
 
   if rt.focus.len == 0 and doc.focus.len > 0 and cells.hasKey(doc.focus):
     rt.setFocus(doc.focus)

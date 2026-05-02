@@ -3,14 +3,12 @@
 This document defines the current implementation target for the adaptive UI app.
 The core app is a generic renderer plus a non-blocking agent runtime. It must not
 contain task-specific modes for narrow workflows. Domain workflows are represented
-as generated `UiDoc` data.
+by chat state plus compact adaptive UI directives.
 
 The central product rule is that the interface adapts to the structure and
-intent of the chat agent's latest response. The app must not render assistant
-text as a markdown document. The UI agent maps response structure to explicit
-components: headings become dedicated title/text areas, choices become
-selectable controls, code becomes `code` areas, and free-form prompts become
-input areas.
+intent of the chat agent's latest response. The app must not ask the model to
+generate JSON or layouts. Nim maps small `ui` directives to explicit components:
+choices become selectable controls and free-form prompts become input areas.
 
 ## Product Shape
 
@@ -44,9 +42,10 @@ src/
     app.nim
     config.nim
     agent.nim
+    turn_extract.nim
+    turn_view.nim
+    ui_compile.nim
     ui_doc.nim
-    ui_parse.nim
-    ui_schema.nim
     ui_render.nim
     components.nim
     interaction.nim
@@ -66,9 +65,10 @@ Module responsibilities:
 - `app.nim`: window setup, event loop, outer layout, input routing, commands.
 - `config.nim`: typed app config loaded and saved with `jsonx`.
 - `agent.nim`: OpenAI/Relay request construction, enqueue, poll, parse.
+- `turn_extract.nim`: parses compact fenced `ui` directives from chat text.
+- `turn_view.nim`: typed directive data.
+- `ui_compile.nim`: builds local `UiDoc` screens from directives.
 - `ui_doc.nim`: typed UI document and interaction event types.
-- `ui_parse.nim`: parse and validate generated `UiDoc` JSON.
-- `ui_schema.nim`: strict OpenAI response format for `UiDoc`.
 - `ui_render.nim`: resolve layout and call component renderers.
 - `components.nim`: persistent component state and event constructors.
 - `interaction.nim`: convert UI events and current values into user text.
@@ -85,18 +85,17 @@ One submitted turn follows this path:
    text is held as pending state until the chat response succeeds.
 4. Each frame, `pollAgent` calls `poll` to drain completed network results.
 5. When chat text arrives, the user text and assistant text are committed to
-   history, then a UI request is enqueued. The chat text is not rendered as a
-   provisional screen.
-6. The UI request includes conversation history and the current `UiDoc` JSON.
-7. The UI request uses native JSON schema response format. The response is
-   parsed with `jsonx` and validated by `parseUiDoc`.
+   history.
+6. `turn_extract.nim` removes an optional fenced `ui` directive from the visible
+   text.
+7. `ui_compile.nim` builds a local `UiDoc` for choice, input, or text display.
 8. `ui_render.nim` resolves `doc.layout` with `parseLayout` and `resolve`.
 9. Components draw inside named cells and may emit one `UiEvent`.
 10. `interaction.nim` converts component events into text for the next turn.
 
-Chat and UI requests are sequential. The app tracks one pending request phase
-and one active Relay request id at a time. Old results whose request id no
-longer matches the active request are ignored. The render loop never blocks.
+The app tracks one pending chat request and one active Relay request id at a
+time. Old results whose request id no longer matches the active request are
+ignored. The render loop never blocks.
 
 ## Commands
 
@@ -106,11 +105,11 @@ Commands are generic:
 - Any other input: submit text to the current adaptive session.
 
 Do not add core commands for specific tasks. If a workflow needs special
-behavior, model it through generated `UiDoc` components and normal event text.
+behavior, model it through a compact `ui` directive and normal event text.
 
 ## UiDoc Contract
 
-The UI subagent returns one JSON object:
+Nim owns `UiDoc` construction:
 
 ```nim
 type
@@ -122,8 +121,8 @@ type
     focus*: string
 ```
 
-The layout is a `uirelays` markdown table. Each area name must match a layout
-cell. Area content cannot create new cells.
+The layout is a `uirelays` markdown table chosen by local code. Each area name
+must match a layout cell. Area content cannot create new cells.
 
 Supported area kinds:
 
@@ -172,27 +171,15 @@ The inner adaptive layout comes from `UiDoc.layout`. Resolve it using the
 adaptive rect's width and height, then offset each resolved rect by the adaptive
 rect origin.
 
-## Agent Roles
+## Agent Role
 
 Chat agent:
 
 - Answers the submitted text.
 - Maintains task state in visible response text.
-- Emits a compact response structure: heading/body, optional fenced code,
-  exactly one `Next action: choose one|type|none` line, and an `Options:` list
-  only for choice steps.
+- May append one compact fenced `ui` directive for the next action.
 - Treats UI event summaries as user interaction with the current generated UI.
 - Does not force any fixed workflow unless the user asks for that shape.
-
-UI subagent:
-
-- Returns only one valid `UiDoc` JSON object.
-- Interprets the latest chat response and maps its structure to explicit
-  components; it does not ask the renderer to interpret markdown.
-- Emits plain text for `text` areas and puts source code only in `code` areas.
-- Uses only the supported component kinds.
-- Chooses the smallest UI that represents the current task state.
-- Does not invent unsupported capabilities.
 
 The app does not load local `SKILL.md` files or inject ambient skill summaries
 into prompts. Future domain packs must be explicit optional modules with tests
@@ -200,10 +187,6 @@ and must not alter the default core prompt.
 
 ## Error Handling
 
-- UI JSON parse failure: keep the previous `UiDoc`, show a status error, and add
-  the raw response to `DebugLog`.
-- Layout failure is rejected by `parseUiDoc` before rendering generated
-  documents. Static documents must be valid in source.
 - Network error: show status, keep the previous `UiDoc`, and keep running.
 - API error body: parse common provider error JSON and show a concise message.
 - Missing API key: open in preview mode with the intro document.
@@ -213,7 +196,6 @@ and must not alter the default core prompt.
 
 The current concept is considered working only when these are true:
 
-- Static `UiDoc` parsing validates supported and invalid documents.
 - Renderer tests cover component state, selection, submit events, and layout
   resolution.
 - `tests/tester.nim` compiles and runs all non-network tests with `-d:sdl3`.

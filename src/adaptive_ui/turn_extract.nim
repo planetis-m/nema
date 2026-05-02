@@ -44,21 +44,22 @@ proc parseOption(value: string; option: var UiCommandOption): bool =
 proc parseUiCommand*(uiBlock: string): UiCommand =
   for rawLine in uiBlock.splitLines:
     let line = rawLine.strip()
+    let lower = line.toLowerAscii()
     if line.len == 0:
       discard
-    elif line == "choice":
+    elif lower == "choice":
       result.kind = uckChoice
-    elif line == "input":
+    elif lower == "input":
       result.kind = uckInput
-    elif line == "none":
+    elif lower == "none":
       result.kind = uckNone
-    elif line.startsWith("title:"):
+    elif lower.startsWith("title:"):
       result.title = line["title:".len .. ^1].cleanTitle()
-    elif line.startsWith("prompt:"):
+    elif lower.startsWith("prompt:"):
       result.prompt = line["prompt:".len .. ^1].strip()
-    elif line.startsWith("placeholder:"):
+    elif lower.startsWith("placeholder:"):
       result.placeholder = line["placeholder:".len .. ^1].strip()
-    elif line.startsWith("option:"):
+    elif lower.startsWith("option:"):
       var option: UiCommandOption
       if parseOption(line["option:".len .. ^1], option):
         result.options.add option

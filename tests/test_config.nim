@@ -6,14 +6,12 @@ block defaults:
   let cfg = initAppConfig()
   doAssert cfg.apiUrl == "https://api.openai.com/v1/chat/completions"
   doAssert cfg.chatModel == "gpt-4.1-mini"
-  doAssert cfg.uiModel == "gpt-4.1-mini"
   doAssert cfg.timeoutMs == 30000
 
 block parsePartialKeepsDefaults:
   let cfg = parseConfig("""{"chatModel":"custom-chat"}""")
   doAssert cfg.apiUrl == "https://api.openai.com/v1/chat/completions"
   doAssert cfg.chatModel == "custom-chat"
-  doAssert cfg.uiModel == "gpt-4.1-mini"
 
 block parseFileKeyOverridesDefault:
   let cfg = parseConfig("""{"apiKey":"file-key"}""")
@@ -30,7 +28,6 @@ block saveAndLoad:
     apiUrl: "http://localhost:9000/v1",
     apiKey: "sk-secret",
     chatModel: "chat",
-    uiModel: "ui",
     timeoutMs: 1000
   )
 

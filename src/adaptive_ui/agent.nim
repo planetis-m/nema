@@ -94,14 +94,6 @@ type
   ApiErrorEnvelope = object
     error: ApiErrorObject
 
-  ApiDetailItem = object
-    `type`: string
-    loc: seq[string]
-    msg: string
-
-  ApiDetailListEnvelope = object
-    detail: seq[ApiDetailItem]
-
 proc initAgentState*(cfg: AppConfig): AgentState =
   result = AgentState(
     cfg: cfg,
@@ -129,9 +121,6 @@ proc hasPending*(state: AgentState): bool =
 proc hasPendingChat*(state: AgentState): bool =
   state.phase == apWaitingChat
 
-proc hasPendingUi*(state: AgentState): bool =
-  false
-
 proc resetPending(state: var AgentState) =
   state.phase = apIdle
   state.attempt = 0
@@ -153,13 +142,6 @@ proc shortened(text: string; limit = 700): string =
   if result.len > limit:
     result = result[0 ..< limit] & "..."
 
-proc apiDetailLocation(item: ApiDetailItem): string =
-  for part in item.loc:
-    if part.len > 0:
-      if result.len > 0:
-        result.add "."
-      result.add part
-
 proc openAiErrorMessage(status: int; body: string; message: var string): bool =
   let prefix = "HTTP " & $status & ": "
   result = false
@@ -176,35 +158,9 @@ proc openAiErrorMessage(status: int; body: string; message: var string): bool =
   except CatchableError:
     discard
 
-proc validationErrorMessage(status: int; body: string; message: var string): bool =
-  let prefix = "HTTP " & $status & ": "
-  result = false
-  try:
-    let parsed = fromJson(body, ApiDetailListEnvelope)
-    if parsed.detail.len > 0:
-      let item = parsed.detail[0]
-      message = prefix
-      if item.msg.strip().len > 0:
-        message.add item.msg.strip()
-      else:
-        message.add "request validation failed"
-      let loc = item.apiDetailLocation()
-      var details = ""
-      details.appendField("type", item.`type`)
-      details.appendField("field", loc)
-      if details.len > 0:
-        message.add " (" & details & ")"
-      if parsed.detail.len > 1:
-        message.add " +" & $(parsed.detail.len - 1) & " more"
-      result = true
-  except CatchableError:
-    discard
-
 proc apiErrorMessage*(status: int; body: string): string =
   var message = ""
   if openAiErrorMessage(status, body, message):
-    return message
-  if validationErrorMessage(status, body, message):
     return message
 
   if body.strip().len > 0:
@@ -294,14 +250,13 @@ proc isRetriable(item: RequestResult): bool =
 proc retryCurrent(state: var AgentState): bool =
   if state.attempt >= MaxRetries:
     return false
+  if state.phase != apWaitingChat:
+    return false
+
   inc state.attempt
   try:
-    case state.phase
-    of apWaitingChat:
-      state.activeRequestId = state.enqueue(state.pendingChatMessages,
-        state.cfg.chatModel, 800, formatText)
-    of apIdle:
-      return false
+    state.activeRequestId = state.enqueue(state.pendingChatMessages,
+      state.cfg.chatModel, 800, formatText)
     result = true
   except IOError:
     state.resetPending()

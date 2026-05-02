@@ -62,26 +62,6 @@ block:
   doAssert cells["body"].y > cells["title"].y
 
 block:
-  let doc = UiDoc(
-    version: 1,
-    layout: """
-| title, 2 lines |
-| body, * |
-| aside, 3 lines |
-""",
-    areas: @[
-      UiArea(name: "title", kind: ukText, text: "Title"),
-      UiArea(name: "body", kind: ukText, text: "Body")
-    ]
-  )
-  let cells = resolveUiDocCells(doc, rect(0, 0, 300, 200), fm.lineHeight)
-  let missing = doc.missingCellNames(cells)
-
-  doAssert cells.hasKey("aside")
-  doAssert missing.len == 1
-  doAssert missing[0] == "aside"
-
-block:
   let area = UiArea(
     name: "answer",
     kind: ukTextInput,

@@ -33,13 +33,13 @@ Use this file as the standing instruction for coding agents working in this repo
 - Route focus by area name from layout hit testing.
 - Keep the bottom input area stable even when the adaptive UI fails.
 
-## Parsing Rules
+## Adaptive UI Rules
 
-- The UI agent returns JSON parsed by `jsonx`.
-- The `layout` field is the only layout definition.
-- `layout` is passed to `parseLayout`.
-- Area content is not allowed to create new layout cells.
-- Unknown area fields are ignored only if the parser is explicitly built with a lenient path.
+- The chat agent may append a small fenced `ui` directive block.
+- Parse that directive with `turn_extract.nim`.
+- Compile directives into local `UiDoc` values with `ui_compile.nim`.
+- Do not ask the model to generate `UiDoc` JSON or layout strings.
+- Keep Submit/progression controls in local Nim code.
 
 ## Testing Rules
 

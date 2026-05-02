@@ -12,7 +12,6 @@ type
     apiUrl*: string
     apiKey*: string
     chatModel*: string
-    uiModel*: string
     timeoutMs*: int
 
 proc initAppConfig*(): AppConfig =
@@ -20,7 +19,6 @@ proc initAppConfig*(): AppConfig =
     apiUrl: DefaultApiUrl,
     apiKey: getEnv(ApiKeyEnv),
     chatModel: DefaultModel,
-    uiModel: DefaultModel,
     timeoutMs: DefaultTimeoutMs
   )
 

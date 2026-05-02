@@ -2,6 +2,5 @@
   "apiUrl": "https://api.openai.com/v1/chat/completions",
   "apiKey": "",
   "chatModel": "gpt-4.1-mini",
-  "uiModel": "gpt-4.1-mini",
   "timeoutMs": 30000
 }

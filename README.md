@@ -1,15 +1,15 @@
 # Adaptive UI
 
-Nim-only AI-driven adaptive UI app. A chat agent handles task state and a UI
-subagent generates interactive surfaces from structured `UiDoc` JSON.
+Nim-only AI-driven adaptive UI app. A chat agent handles task state and can
+append tiny `ui` directives. The app compiles those directives into interactive
+surfaces locally.
 
 The app has a stable text input at the bottom and an adaptive surface above it.
 The adaptive surface renders generic primitives: text, code, math, radio
 choices, button rows, and multiline text input.
 
-The UI adapts to the structure and intent of the chat response. It does not
-render assistant markdown. The UI agent converts headers, choices, code, and
-prompts into explicit `UiDoc` components.
+The UI adapts to the next action in the chat response. It does not ask the
+model to generate JSON or layout strings.
 
 ## Build
 
@@ -36,7 +36,6 @@ is missing, defaults are used.
   "apiUrl": "https://api.openai.com/v1/chat/completions",
   "apiKey": "",
   "chatModel": "gpt-4.1-mini",
-  "uiModel": "gpt-4.1-mini",
   "timeoutMs": 30000
 }
 ```

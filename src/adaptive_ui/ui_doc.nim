@@ -1,6 +1,3 @@
-import jsonx
-import jsonx/[parsejson, streams]
-
 type
   UiKind* = enum
     ukText,
@@ -44,42 +41,7 @@ type
     id*: string
     value*: string
 
-const
-  FallbackLayout* = "| main, * |"
-
-proc readJson*(dst: var UiKind; p: var JsonParser) =
-  var name: string
-  readJson(name, p)
-  case name
-  of "text":
-    dst = ukText
-  of "code":
-    dst = ukCode
-  of "radio":
-    dst = ukRadio
-  of "buttons":
-    dst = ukButtons
-  of "textInput":
-    dst = ukTextInput
-  of "math":
-    dst = ukMath
-  else:
-    raiseParseErr(p, "valid UI kind")
-
-proc writeJson*(s: Stream; x: UiKind) =
-  case x
-  of ukText:
-    writeJson(s, "text")
-  of ukCode:
-    writeJson(s, "code")
-  of ukRadio:
-    writeJson(s, "radio")
-  of ukButtons:
-    writeJson(s, "buttons")
-  of ukTextInput:
-    writeJson(s, "textInput")
-  of ukMath:
-    writeJson(s, "math")
+const FallbackLayout* = "| main, * |"
 
 proc textUiDoc*(title, text: string): UiDoc =
   UiDoc(
