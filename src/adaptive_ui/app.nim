@@ -218,7 +218,7 @@ proc runApp*(configPath = "adaptive_ui.json";
     case e.kind
     of QuitEvent, WindowCloseEvent:
       running = false
-    of WindowResizeEvent, WindowMetricsEvent:
+    of WindowResizeEvent:
       state.width = e.x
       state.height = e.y
     of MouseDownEvent:

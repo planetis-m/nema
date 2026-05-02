@@ -127,8 +127,11 @@ proc renderRadio(rt: var UiRuntime; area: UiArea; e: Event; r: Rect;
     drawBorder(row, rowBorder)
 
     let marker = if isSelected: "(*) " else: "( ) "
+    saveState()
+    setClipRect(row)
     discard drawText(font, row.x + 8, row.y + 5,
       marker & option.label, theme.fg[TokenClass.Text], rowBg)
+    restoreState()
 
   result = radioHitEvent(rt, area, e, r, fm)
 
@@ -159,8 +162,11 @@ proc renderButtons(area: UiArea; e: Event; r: Rect; font: Font;
     let b = buttonRect(r, font, option.label, x)
     fillRect(b, theme.selBg)
     drawBorder(b, theme.fg[TokenClass.Operator])
+    saveState()
+    setClipRect(b)
     discard drawText(font, b.x + 14, b.y + max(4, (b.h - fontLineSkip(font)) div 2),
       option.label, theme.fg[TokenClass.Text], theme.selBg)
+    restoreState()
   result = buttonHitEvent(area, e, r, font)
 
 proc textInputButtonRect*(r: Rect; font: Font; label: string): Rect =
@@ -279,6 +285,8 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
     let r = cells[areaView.name]
     let focused = rt.focus == areaView.name
     let routedEvent = if focused: e else: default Event
+    saveState()
+    setClipRect(r)
     let ev =
       case areaView.kind
       of ukText, ukCode, ukMath:
@@ -289,6 +297,7 @@ proc renderUiDoc*(doc: UiDoc; rt: var UiRuntime; e: Event; area: Rect;
         renderButtons(areaView, routedEvent, r, font, theme)
       of ukTextInput:
         renderTextInput(rt, areaView, routedEvent, r, focused, font, theme)
+    restoreState()
 
     if ev.kind != ueNone:
       result = ev
