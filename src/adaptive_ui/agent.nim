@@ -94,12 +94,9 @@ type
     error: ApiErrorObject
 
 proc initAgentState*(cfg: AppConfig): AgentState =
-  result = AgentState(
+  AgentState(
     cfg: cfg,
-    endpoint: OpenAIConfig(
-      url: cfg.apiUrl,
-      apiKey: cfg.apiKey
-    ),
+    endpoint: OpenAIConfig(url: cfg.apiUrl, apiKey: cfg.apiKey),
     client: newRelay(
       maxInFlight = 1,
       defaultTimeoutMs = cfg.timeoutMs,
@@ -141,28 +138,24 @@ proc shortened(text: string; limit = 700): string =
   if result.len > limit:
     result = result[0 ..< limit] & "..."
 
-proc openAiErrorMessage(status: int; body: string; message: var string): bool =
-  let prefix = "HTTP " & $status & ": "
-  result = false
+proc openAiErrorDetail(body: string): string =
   try:
     let parsed = fromJson(body, ApiErrorEnvelope)
     if parsed.error.message.strip().len > 0:
-      message = prefix & parsed.error.message.strip().shortened(120)
+      result = parsed.error.message.strip().shortened(120)
       var details = ""
       details.appendField("type", parsed.error.`type`)
       details.appendField("param", parsed.error.param)
       if details.len > 0:
-        message.add " (" & details & ")"
-      result = true
+        result.add " (" & details & ")"
   except CatchableError:
     discard
 
 proc apiErrorMessage*(status: int; body: string): string =
-  var message = ""
-  if openAiErrorMessage(status, body, message):
-    return message
-
-  if body.strip().len > 0:
+  let detail = openAiErrorDetail(body)
+  if detail.len > 0:
+    result = "HTTP " & $status & ": " & detail
+  elif body.strip().len > 0:
     result = "HTTP " & $status & ": " & body.shortened()
   else:
     result = "HTTP " & $status & ": empty error response"
@@ -177,135 +170,101 @@ proc clearHistory*(state: var AgentState) =
   state.chatHistory.setLen(0)
   state.clearPending()
 
-proc enqueue(state: var AgentState; messages: seq[ChatMessage];
-    model: string; maxTokens: int; responseFormat: ResponseFormat): int64 =
-  result = state.nextId
+proc sendChatRequest(state: var AgentState; messages: seq[ChatMessage]) =
+  let reqId = state.nextId
   inc state.nextId
-  var batch: RequestBatch
-  chatAdd(
-    batch = batch,
+  let spec = chatRequest(
     cfg = state.endpoint,
     params = chatCreate(
-      model = model,
+      model = state.cfg.chatModel,
       messages = messages,
       temperature = 0.2,
-      maxTokens = maxTokens,
+      maxTokens = 800,
       toolChoice = ToolChoice.none,
-      responseFormat = responseFormat
+      responseFormat = formatText
     ),
-    requestId = result,
+    requestId = reqId,
     timeoutMs = state.cfg.timeoutMs
   )
-  state.client.startRequests(batch)
+  state.client.startRequest(spec)
+  state.activeRequestId = reqId
 
 proc submitChat*(state: var AgentState; userText: string): string =
   let text = userText.strip()
   if text.len == 0:
-    result = "input is empty"
-  elif state.client == nil:
-    result = "agent is closed"
-  elif state.phase != apIdle:
-    result = "request already in progress"
-  elif not state.cfg.hasKey():
-    result = "Set apiKey in config or OPENAI_API_KEY."
-  else:
-    let messages = state.chatMessages & @[userMessageText(text)]
-    try:
-      state.activeRequestId = state.enqueue(messages, state.cfg.chatModel, 800,
-        formatText)
-    except IOError:
-      state.resetPending()
-      result = getCurrentExceptionMsg()
-      return
-    state.phase = apWaitingChat
-    state.attempt = 1
-    state.pendingChatMessages = messages
-    state.pendingUserText = text
-
-proc extractText(item: RequestResult): string =
-  if item.error.kind != teNone:
-    raise newException(IOError, $item.error.kind & ": " & item.error.message)
-  if not isHttpSuccess(item.response.code):
-    raise newException(IOError,
-      apiErrorMessage(item.response.code, item.response.body))
-  var parsed: ChatCreateResult
-  if not chatParse(item.response.body, parsed):
-    raise newException(ValueError, "failed to parse chat response")
+    return "input is empty"
+  if state.client == nil:
+    return "agent is closed"
+  if state.phase != apIdle:
+    return "request already in progress"
+  if not state.cfg.hasKey():
+    return "Set apiKey in config or OPENAI_API_KEY."
+  let messages = state.chatMessages & @[userMessageText(text)]
   try:
-    result = parsed.firstText()
-  except ValueError:
-    raise newException(ValueError,
-      "response has no text content: " & getCurrentExceptionMsg())
-
-proc isRetriable(item: RequestResult): bool =
-  if item.error.kind != teNone:
-    return isRetriableTransport(item.error.kind)
-  return isRetriableStatus(item.response.code)
-
-proc retryCurrent(state: var AgentState): bool =
-  if state.attempt >= MaxRetries:
-    return false
-  if state.phase != apWaitingChat:
-    return false
-
-  inc state.attempt
-  try:
-    state.activeRequestId = state.enqueue(state.pendingChatMessages,
-      state.cfg.chatModel, 800, formatText)
-    result = true
+    state.sendChatRequest(messages)
   except IOError:
     state.resetPending()
-    raise
+    return getCurrentExceptionMsg()
+  state.phase = apWaitingChat
+  state.attempt = 1
+  state.pendingChatMessages = messages
+  state.pendingUserText = text
 
-proc pollActiveResult(state: var AgentState; item: var RequestResult): bool =
-  if state.client == nil:
-    return false
+proc extractResult(item: RequestResult): AgentResult =
+  if item.error.kind != teNone:
+    result = AgentResult(kind: resError,
+      error: $item.error.kind & ": " & item.error.message)
+  elif not isHttpSuccess(item.response.code):
+    result = AgentResult(kind: resError,
+      error: apiErrorMessage(item.response.code, item.response.body))
+  else:
+    var parsed: ChatCreateResult
+    if not chatParse(item.response.body, parsed):
+      result = AgentResult(kind: resError, error: "failed to parse chat response")
+    else:
+      try:
+        result = AgentResult(kind: resChatText, text: parsed.firstText())
+      except ValueError:
+        result = AgentResult(kind: resError,
+          error: "response has no text content: " & getCurrentExceptionMsg())
 
-  while state.client.pollForResult(item):
-    if state.phase != apIdle and
-        item.response.request.requestId == state.activeRequestId:
-      return true
-
-  result = false
-
-proc finishChat(state: var AgentState; text: string; outResult: var AgentResult) =
+proc commitChatResult(state: var AgentState; text: string) =
   state.chatMessages = state.pendingChatMessages
   state.chatMessages.add assistantMessageText(text)
   state.chatHistory.add ChatEntry(role: arUser, content: state.pendingUserText)
   state.chatHistory.add ChatEntry(role: arAssistant, content: text)
   state.resetPending()
-  outResult = AgentResult(kind: resChatText, text: text)
 
-proc finishSuccess(state: var AgentState; text: string;
-    outResult: var AgentResult) =
-  case state.phase
-  of apWaitingChat:
-    state.finishChat(text, outResult)
-  of apIdle:
-    discard
-
-proc handlePollError(state: var AgentState; item: RequestResult;
-    err: string; outResult: var AgentResult) =
-  let attemptBefore = state.attempt
-  try:
-    if isRetriable(item) and state.retryCurrent():
-      outResult = AgentResult(kind: resError,
-        error: "retrying (" & $attemptBefore & "/" & $MaxRetries & "): " & err)
-    else:
-      state.resetPending()
-      outResult = AgentResult(kind: resError, error: err)
-  except CatchableError:
-    outResult = AgentResult(kind: resError,
-      error: "retry failed: " & getCurrentExceptionMsg())
-
-proc poll*(state: var AgentState; outResult: var AgentResult): bool =
-  var item: RequestResult
-  if not state.pollActiveResult(item):
+proc poll*(state: var AgentState; reply: var AgentResult): bool =
+  if state.client == nil:
     return false
 
-  try:
-    let text = extractText(item)
-    state.finishSuccess(text, outResult)
-  except CatchableError:
-    state.handlePollError(item, getCurrentExceptionMsg(), outResult)
-  return true
+  var item: RequestResult
+  while state.client.pollForResult(item):
+    if state.phase == apIdle or
+        item.response.request.requestId != state.activeRequestId:
+      discard
+    elif state.phase == apWaitingChat:
+      reply = extractResult(item)
+      if reply.kind == resChatText:
+        state.commitChatResult(reply.text)
+        return true
+
+      let retriable =
+        if item.error.kind != teNone:
+          isRetriableTransport(item.error.kind)
+        else:
+          isRetriableStatus(item.response.code)
+      if retriable and state.attempt < MaxRetries:
+        inc state.attempt
+        try:
+          state.sendChatRequest(state.pendingChatMessages)
+          reply = AgentResult(kind: resError,
+            error: "retrying (" & $(state.attempt - 1) & "/" & $MaxRetries & "): " & reply.error)
+        except IOError:
+          state.resetPending()
+          reply = AgentResult(kind: resError,
+            error: "retry failed: " & getCurrentExceptionMsg())
+      else:
+        state.resetPending()
+      return true
